@@ -1,43 +1,17 @@
 #!/bin/bash
-
-# --- Colors for Output ---
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${YELLOW}[*] ShadowNet Dependency Installer (v2 - Anti-Drift) Initializing...${NC}"
-
-# Check for root privileges
 if [[ $EUID -ne 0 ]]; then
-	echo -e "${RED}[!] Error: This script must be run as root (sudo).${NC}"
+	echo -e "${RED}[!] Error: Run as root.${NC}"
 	exit 1
 	fi
 	
-	# 1. Update Package Lists
-	echo -e "${GREEN}[+] Updating system package lists...${NC}"
+	echo -e "${GREEN}[+] Installing dependencies...${NC}"
 	apt-get update -y
+	DEBIAN_FRONTEND=noninteractive apt-get install -y tor iptables-persistent iproute2 curl tlsdate macchanger haveged net-tools
 	
-	# 2. Install Core Dependencies
-	# tlsdate: Securely sets the clock over TLS (Tor-friendly)
-	echo -e "${GREEN}[+] Installing Tor, Traffic Control, and tlsdate...${NC}"
-	DEBIAN_FRONTEND=noninteractive apt-get install -y tor iptables-persistent iproute2 curl tlsdate
-	
-	# 3. Enable and Start Tor Service
-	echo -e "${GREEN}[+] Enabling Tor service...${NC}"
-	systemctl enable tor
-	systemctl start tor
-	
-	# 4. Finalizing Environment
-	echo -e "${GREEN}[+] Setting permissions for ShadowNet...${NC}"
-	if [ -f "shadownet.sh" ]; then
-		chmod +x shadownet.sh
-		echo -e "${GREEN}[+] shadownet.sh is now executable.${NC}"
-		else
-			echo -e "${YELLOW}[!] Warning: shadownet.sh not found in current directory.${NC}"
-			fi
-			
-			echo -e "${YELLOW}--------------------------------------------------${NC}"
-			echo -e "${GREEN}[V] Setup Complete! Anti-Time-Drift measures ready.${NC}"
-			echo -e "${YELLOW}[i] Usage: sudo ./shadownet.sh start${NC}"
-			echo -e "${YELLOW}--------------------------------------------------${NC}"
+	chmod +x shadow.sh
+	echo -e "${GREEN}[V] Setup Complete.${NC}"
