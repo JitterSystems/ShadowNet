@@ -60,7 +60,7 @@ What it is: Implements a technical safeguard against "TIME-WAIT Assassination."
 
 The Benefit: It prevents an adversary from using duplicate or "stale" packets to forcibly reset your connection. It makes your TCP "handshake" much more resilient against remote manipulation.
 
-12. Hardware ID Randomization (macchanger)
+11. Hardware ID Randomization (macchanger)
 
 What it is: A logic block that detects if you have the macchanger tool installed.
 
