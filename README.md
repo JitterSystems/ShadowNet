@@ -94,3 +94,5 @@ Ease of Use	High	High (System-wide)	Low (Per-app)
 ShadowNet is a powerful tool for privacy and security research. However, no software can protect against human error. Avoid logging into personally identifiable accounts (Google, Facebook, etc.) while the protocol is active. This tool is provided "as is" for educational purposes.
 
 "There is nothing that the Sovereigns haven't seen."
+
+Note: As of right now, if you route your traffic through ShadowNetn the Tor browser and it does not function, please resort to using Mullvad Browser, as you are beyond the fingerprinting methods because of the sphinx, cover traffic and delayed packets
