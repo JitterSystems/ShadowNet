@@ -56,44 +56,59 @@ function start_shadownet() {
 		EOF
 		systemctl restart tor
 		
-		# 8. CHRONO-ANONYMIZATION
-		tlsdate -V -n -H rsync.torproject.org > /dev/null 2>&1
-		
-		# 9. ENTROPY HARVESTING
-		systemctl restart haveged
-		
-		echo -e "${YELLOW}[*] Waiting 20s for Sovereign Heartbeat...${NC}"
-		sleep 20
-		
-		# 10. SYNCHRONOUS TIME-SLOTTING (CBR)
-		tc qdisc del dev $INT_IF root 2>/dev/null
-		tc qdisc add dev $INT_IF root handle 1: tbf rate 1mbit burst 32k latency 400ms
-		tc qdisc add dev $INT_IF parent 1:1 netem delay 100ms
-		
-		# 11. MULTI-PATH ROUTING (WEBRTC FIX)
-		echo -e "[*] Finalizing Unlinkable Routing & Killing WebRTC Leaks..."
-		iptables -F
-		iptables -t nat -F
-		
-		# Allow Local Loopback
-		iptables -A OUTPUT -o lo -j ACCEPT
-		
-		# RULE A: Allow Tor User (Bypass NAT)
-		iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN
-		iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT
-		
-		# RULE B: Redirect DNS Traffic (UDP 53) to Tor DNS
-		iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports $DNS_PORT
-		iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports $DNS_PORT
-		
-		# RULE C: THE WEBRTC KILLER (Block all other UDP)
-		# WebRTC uses random UDP ports to find your IP. This blocks them.
-		iptables -A OUTPUT -p udp ! --dport $DNS_PORT -j REJECT
-		
-		# RULE D: Redirect all other TCP to Tor TransPort
-		iptables -t nat -A OUTPUT -p tcp -m state --state NEW,ESTABLISHED -j REDIRECT --to-ports $TRANS_PORT
-		
-		echo -e "${GREEN}[!] ShadowNet Sovereign Active: WebRTC Leaks Blocked.${NC}"
+		# 8. CLOCK DRIFT MIMICRY (Advanced Chrono-Anonymization)
+		# Simulates hardware oscillation variance rather than a perfect NTP sync
+		if command -v adjtimex &> /dev/null; then
+			DRIFT_VAL=$(( ( RANDOM % 20 )  - 10 ))
+			adjtimex -o $DRIFT_VAL > /dev/null 2>&1
+			fi
+			tlsdate -V -n -H rsync.torproject.org > /dev/null 2>&1
+			
+			# 9. ENTROPY HARVESTING
+			systemctl restart haveged
+			
+			# 10. MULTI-TIERED DECOY HANDSHAKES
+			# Generates noise floor of standard TLS handshakes to mask Tor entry nodes
+			(
+				DECOYS=("https://www.google.com" "https://www.cloudflare.com" "https://www.microsoft.com")
+				for i in {1..3}; do
+					curl -s -L ${DECOYS[$RANDOM % ${#DECOYS[@]}]} > /dev/null 2>&1
+					sleep $(($RANDOM % 3))
+					done
+			) &
+			
+			echo -e "${YELLOW}[*] Waiting 20s for Sovereign Heartbeat...${NC}"
+			sleep 20
+			
+			# 11. ASYNCHRONOUS MESSAGE QUEUING (Stochastic Fairness Queuing)
+			# Prevents timing analysis by jittering packet release
+			tc qdisc del dev $INT_IF root 2>/dev/null
+			tc qdisc add dev $INT_IF root handle 1: htb default 11
+			tc class add dev $INT_IF parent 1: classid 1:11 htb rate 1mbit
+			tc qdisc add dev $INT_IF parent 1:11 handle 10: sfq perturb 10
+			
+			# 12. MULTI-PATH ROUTING (WEBRTC FIX)
+			echo -e "[*] Finalizing Unlinkable Routing & Killing WebRTC Leaks..."
+			iptables -F
+			iptables -t nat -F
+			
+			iptables -A OUTPUT -o lo -j ACCEPT
+			
+			# RULE A: Allow Tor User
+			iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN
+			iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT
+			
+			# RULE B: Redirect DNS Traffic
+			iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports $DNS_PORT
+			iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports $DNS_PORT
+			
+			# RULE C: THE WEBRTC KILLER
+			iptables -A OUTPUT -p udp ! --dport $DNS_PORT -j REJECT
+			
+			# RULE D: Redirect all other TCP to Tor TransPort
+			iptables -t nat -A OUTPUT -p tcp -m state --state NEW,ESTABLISHED -j REDIRECT --to-ports $TRANS_PORT
+			
+			echo -e "${GREEN}[!] ShadowNet Sovereign Active: WebRTC Leaks Blocked.${NC}"
 }
 
 function stop_shadownet() {
