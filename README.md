@@ -1,84 +1,82 @@
-ShadowNet: Flow-Invariant Anonymity Protocol (TOR + Mixnet technique)
+🛡️ ShadowNet: Flow-Invariant Anonymity Protocol
 
-ShadowNet is an advanced network hardening framework for Kali Linux and Parrot OS. It transforms a standard workstation into a "Private Mixnet of One" by forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform Tor tunnel.
+Version 2.0: Asynchronous Obfuscation Layer
 
-Unlike standard transparent proxies, ShadowNet eliminates Behavioral Metadata—the timing and size patterns that state-level adversaries (like the NSA) use to deanonymize encrypted traffic.
-🛡️ Key Features
+ShadowNet is an advanced network hardening framework that transforms a standard workstation into a "Private Mixnet of One." By forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform tunnel, it eliminates the behavioral metadata that state-level adversaries use to deanonymize users.
+🛡️ Core Evolutionary Features
+1. Asynchronous Message Queuing (SFQ)
 
-1. Synchronous Time-Slotting (CBR)
+ShadowNet replaces standard linear packet release with Stochastic Fairness Queuing.
 
-ShadowNet implements Constant Bit Rate (CBR) flow. By using the Linux kernel's Traffic Control (tc) subsystem, it releases data in a perfectly rhythmic "heartbeat" (1mbit pulse). This ensures your network signature remains a flat line, regardless of whether you are idle or active.
+    The Logic: Instead of a predictable "tick-tock" delivery, packets are hashed into multiple internal "buckets" and released using a shuffling algorithm.
 
-2. Sphinx-Style MTU Clamping
+    The Benefit: It destroys Timing Correlation Attacks. By re-shuffling the internal order of packets every 10 seconds (perturb 10), it ensures that the rhythm of data leaving your home never matches the rhythm of data exiting a Tor node.
 
-To defeat Packet Size Analysis, ShadowNet uses iptables mangle rules to clamp the Maximum Segment Size (MSS) to exactly 1200 bytes. Every "slice" of data moving across the wire is physically identical, making it impossible to distinguish a text message from a file transfer.
+2. Multi-Tiered Decoy Handshakes
 
-3. Binary Pattern Obfuscation
+ShadowNet creates a "TLS Noise Floor" before establishing its primary secure tunnel.
 
-Defeats Deep Packet Inspection (DPI) by injecting non-functional, randomized padding into Tor protocol headers. This prevents automated systems from identifying the unique binary "fingerprint" of the Tor onion routing protocol.
+    The Logic: Upon initialization, the protocol executes background handshakes with high-traffic, "safe" global CDNs (Google, Cloudflare, Microsoft).
 
-4. Background "Hum" Cover Traffic
+    The Benefit: To an ISP, your initial connection looks like standard web browsing. This masks the "Start-up Signature" of the Tor protocol, blending your entry node connection into a flurry of unremarkable HTTPS traffic.
 
-ShadowNet maintains a constant 1mbit stream of jittered data. This creates a "noise floor" that masks the start and end of your actual communications. To an observer, your connection is "always busy," hiding your true intent.
+3. Hardware Clock-Drift Mimicry
 
-5. Deterministic Latency Masking
+ShadowNet moves beyond "Perfect Time Sync" to simulate physical hardware imperfections.
 
-Adds a fixed 100ms processing delay to normalize your hardware's response time. This prevents "Hardware Fingerprinting," where an adversary guesses your CPU speed based on how fast your machine responds to network requests.
+    The Logic: Using adjtimex, the protocol introduces a microscopic, random oscillation (drift) into the system clock.
 
-6. 🛡️ Advanced Anonymity: Secure Distributed Time Sync (sdwdate)
+    The Benefit: Virtual machines and automated bots often have "perfect" millisecond-accurate clocks. Real physical laptops have tiny vibrations that cause time to drift. Mimicking this drift prevents Clock-Skew Fingerprinting, making your machine look like an actual physical device rather than an anonymized instance.
 
-Anti-Fingerprinting: It eliminates "Clock Skew" (the unique ms offset of your CPU) that can be used to track your identity across different networks.
+4. Sphinx-Style MTU Clamping (Fixed 1200b)
 
-Zero-Leak Proxying: Unlike standard NTP which uses UDP port 123, this system fetches time over encrypted TLS/Onion connections within the Tor network.
+To defeat Packet Size Analysis, ShadowNet uses kernel-level mangle rules to clamp the Maximum Segment Size (MSS) to exactly 1200 bytes.
 
-Distributed Consensus: It doesn't trust a single server; it calculates the median time from multiple high-trust sources to prevent an adversary from feeding you "fake time" to de-sync your connection.
+    The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-Temporal Masking: It resets the system clock during the initial "Heartbeat" phase, ensuring your machine looks like a generic, perfectly-synced node before a single packet is sent.
+5. Constant Bit Rate (CBR) Shaping (1mbit)
 
-7. Anti-Leak Protection (DNS & TCP)
+ShadowNet maintains a disciplined 1mbit pulse regardless of your actual activity.
 
-Transparent Redirection: Every TCP connection is hijacked at the kernel level and forced into the Tor TransPort.
+    The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 1mbit window.
 
-DNS Shielding: All Port 53 (UDP) queries are intercepted and resolved internally via Tor’s encrypted DNSPort.
+    The Benefit: Your network signature remains a flat line. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
 
+🛡️ Anti-Forensic & Leak Protection
+6. The "WebRTC Killer" Firewall
 
-8. OS-Fingerprint Morphing (ip_default_ttl=128)
+WebRTC is the primary vector for IP leaks in modern browsers. ShadowNet implements a Strict UDP Reject policy.
 
-What it is: Changes your "Time To Live" value from the Linux default (64) to the Windows default (128).
+    The Benefit: It blocks all non-DNS UDP traffic. Since WebRTC requires random UDP ports to discover your "real" IP, this firewall rule effectively "blinds" the browser's ability to leak your identity.
 
-The Benefit: To any automated sensor or ISP, your encrypted packets now look like they are coming from a standard Windows 10/11 home PC. It makes you a "needle in a haystack" of billions of users instead of a "Linux privacy user."
+7. OS-Fingerprint Morphing (ttl=128)
 
-9. Hardware Clock-Skew Defense (tcp_timestamps=0)
+ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows workstation.
 
-What it is: Disables the TCP timestamp field in your packet headers.
+    The Logic: Changes the "Time To Live" (TTL) from 64 (Linux) to 128 (Windows) and disables TCP Timestamps.
 
-The Benefit: Every CPU has a tiny, unique physical vibration (clock-skew). Advanced adversaries like the NSA use these timestamps to "fingerprint" your specific motherboard, allowing them to track your laptop even if you change your IP. Setting this to 0 deletes that physical serial number.
+    The Benefit: You become a "needle in a haystack" of billions of Windows users. To automated network sensors, your traffic looks like it's coming from a standard home PC rather than a specialized privacy OS.
 
-10. TCP Stack Hardening (tcp_rfc1337=1)
+8. Secure Distributed Time Sync (Chrono-Anonymization)
 
-What it is: Implements a technical safeguard against "TIME-WAIT Assassination."
+    Zero-Leak Proxying: Fetches time over encrypted TLS/Onion connections, avoiding the suspicious UDP Port 123 (NTP).
 
-The Benefit: It prevents an adversary from using duplicate or "stale" packets to forcibly reset your connection. It makes your TCP "handshake" much more resilient against remote manipulation.
+    Distributed Consensus: Calculates the median time from multiple high-trust sources to prevent "Time-Warp" attacks where an adversary feeds you fake time to de-sync your encryption.
 
-11. Hardware ID Randomization (macchanger)
+9. Volatile Memory & Entropy Scrambling
 
-What it is: A logic block that detects if you have the macchanger tool installed.
+    Entropy Harvesting: Restarts haveged to ensure the system has maximum randomness for encryption keys.
 
-The Benefit: If installed, it automatically gives your network card a new, random MAC address every time you start the script. This ensures that even your local router cannot track your physical hardware history.
+    Memory Purge: Upon deactivation, the script drops system caches and clears volatile metadata, leaving no "residue" of the session in RAM.
 
+🚀 Quick Start
 
-BONUS:
+    Install Dependencies: sudo ./setup.sh
 
-Disables ipv6 
+    Initialize ShadowNet: sudo ./shadow.sh start
 
-Kernel Log Silencing (Anti-Forensics)
+    Verify Anonymity: Check your IP and run a WebRTC leak test.
 
-Hostname Masking
+    Deactivate: sudo ./shadow.sh stop (Restores system to original state).
 
-Chrono-Anonymization (Secure Time Sync)
-
-Entropy Scrambling
-
-The "Bridge" Exception (This allows the Tor process (and only the Tor process) to reach the internet so it can actually build the tunnel for your traffic.)
-
-Volatile Memory Purge (When you shut down ShadowNet, this wipes the RAM caches of your session metadata)
+    Note: ShadowNet is designed for high-latency, high-security environments. By prioritizing Flow-Invariance over speed, it provides protection against the world's most advanced traffic analysis systems.
