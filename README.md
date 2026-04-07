@@ -1,5 +1,7 @@
 🛡️ ShadowNet: Flow-Invariant Anonymity Protocol
 
+No longer rely on being unique to become anonymous like regular, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
+
 Version 2.0: Asynchronous Obfuscation Layer
 
 ShadowNet is an advanced network hardening framework that transforms a standard workstation into a "Private Mixnet of One." By forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform tunnel, it eliminates the behavioral metadata that state-level adversaries use to deanonymize users.
