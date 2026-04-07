@@ -4,7 +4,7 @@ Version 2.0: Asynchronous Obfuscation Layer
 
 ShadowNet is an advanced network hardening framework that transforms a standard workstation into a "Private Mixnet of One." By forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform tunnel, it eliminates the behavioral metadata that state-level adversaries use to deanonymize users.
 🛡️ Core Evolutionary Features
-1. Asynchronous Message Queuing (SFQ)
+1. Asynchronous Message Queuing (SFQ) Randomized delay/reordering and shuffling
 
 ShadowNet replaces standard linear packet release with Stochastic Fairness Queuing.
 
