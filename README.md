@@ -1,4 +1,4 @@
-🛡️ ShadowNet: Flow-Invariant Anonymity Protocol
+🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Mixnet Techniques)
 
 No longer rely on being unique to become anonymous like regular, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
 
