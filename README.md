@@ -34,7 +34,7 @@ To defeat Packet Size Analysis, ShadowNet uses kernel-level mangle rules to clam
 
     The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-5. Constant Bit Rate (CBR) Shaping (1mbit)
+5. Constant Bit Rate (CBR) Shaping (1mbit) (Cover Traffic)
 
 ShadowNet maintains a disciplined 1mbit pulse regardless of your actual activity.
 
