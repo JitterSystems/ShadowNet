@@ -25,6 +25,16 @@ ShadowNet maintains a constant 1mbit stream of jittered data. This creates a "no
 
 Adds a fixed 100ms processing delay to normalize your hardware's response time. This prevents "Hardware Fingerprinting," where an adversary guesses your CPU speed based on how fast your machine responds to network requests.
 
+6. 🛡️ Advanced Anonymity: Secure Distributed Time Sync (sdwdate)
+
+Anti-Fingerprinting: It eliminates "Clock Skew" (the unique ms offset of your CPU) that can be used to track your identity across different networks.
+
+Zero-Leak Proxying: Unlike standard NTP which uses UDP port 123, this system fetches time over encrypted TLS/Onion connections within the Tor network.
+
+Distributed Consensus: It doesn't trust a single server; it calculates the median time from multiple high-trust sources to prevent an adversary from feeding you "fake time" to de-sync your connection.
+
+Temporal Masking: It resets the system clock during the initial "Heartbeat" phase, ensuring your machine looks like a generic, perfectly-synced node before a single packet is sent.
+
 6. Anti-Leak Protection (DNS & TCP)
 
 Transparent Redirection: Every TCP connection is hijacked at the kernel level and forced into the Tor TransPort.
