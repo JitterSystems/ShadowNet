@@ -1,4 +1,4 @@
-ShadowNet: Flow-Invariant Anonymity Protocol
+ShadowNet: Flow-Invariant Anonymity Protocol (TOR + Mixnet technique)
 
 ShadowNet is an advanced network hardening framework for Kali Linux and Parrot OS. It transforms a standard workstation into a "Private Mixnet of One" by forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform Tor tunnel.
 
