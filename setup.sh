@@ -6,7 +6,7 @@ RED='\033[0;31m'
 YELLOW='\033[1;33m'
 NC='\033[0m'
 
-echo -e "${YELLOW}[*] ShadowNet Dependency Installer Initializing...${NC}"
+echo -e "${YELLOW}[*] ShadowNet Dependency Installer (v2 - Anti-Drift) Initializing...${NC}"
 
 # Check for root privileges
 if [[ $EUID -ne 0 ]]; then
@@ -19,12 +19,9 @@ if [[ $EUID -ne 0 ]]; then
 	apt-get update -y
 	
 	# 2. Install Core Dependencies
-	# tor: The anonymity network
-	# iptables-persistent: To manage firewall rules across reboots
-	# iproute2: Provides the 'tc' command for traffic shaping
-	# curl: For verifying the connection
-	echo -e "${GREEN}[+] Installing Tor, IPTables-Persistent, and Traffic Control tools...${NC}"
-	DEBIAN_FRONTEND=noninteractive apt-get install -y tor iptables-persistent iproute2 curl
+	# tlsdate: Securely sets the clock over TLS (Tor-friendly)
+	echo -e "${GREEN}[+] Installing Tor, Traffic Control, and tlsdate...${NC}"
+	DEBIAN_FRONTEND=noninteractive apt-get install -y tor iptables-persistent iproute2 curl tlsdate
 	
 	# 3. Enable and Start Tor Service
 	echo -e "${GREEN}[+] Enabling Tor service...${NC}"
@@ -41,6 +38,6 @@ if [[ $EUID -ne 0 ]]; then
 			fi
 			
 			echo -e "${YELLOW}--------------------------------------------------${NC}"
-			echo -e "${GREEN}[V] Setup Complete!${NC}"
+			echo -e "${GREEN}[V] Setup Complete! Anti-Time-Drift measures ready.${NC}"
 			echo -e "${YELLOW}[i] Usage: sudo ./shadownet.sh start${NC}"
 			echo -e "${YELLOW}--------------------------------------------------${NC}"
