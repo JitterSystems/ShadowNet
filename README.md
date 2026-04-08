@@ -2,7 +2,7 @@
 
 No longer rely on being unique to be anonymous like regular tor, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
 
-Version 1.0:
+Version 1.0: For Kali Linux/Parrot OS Only
 
 Asynchronous Obfuscation Layer:
 
