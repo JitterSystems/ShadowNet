@@ -36,11 +36,11 @@ To defeat Packet Size Analysis, ShadowNet uses kernel-level mangle rules to clam
 
     The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-5. Constant Bit Rate (CBR) Shaping (1mbit) (Cover Traffic)
+5. Constant Bit Rate (CBR) Shaping (100kbit) (Cover Traffic)
 
-ShadowNet maintains a disciplined 1mbit pulse regardless of your actual activity.
+ShadowNet maintains a disciplined 100kbit pulse regardless of your actual activity.
 
-    The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 1mbit window.
+    The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 100kbit window.
 
     The Benefit: Your network signature remains a flat line. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
 
