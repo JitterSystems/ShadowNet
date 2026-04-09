@@ -86,3 +86,5 @@ ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows 
     Deactivate: sudo ./shadow.sh stop (Restores system to original state).
 
     Note: ShadowNet is designed for high-latency, high-security environments. By prioritizing Flow-Invariance over speed, it provides protection against the world's most advanced traffic analysis systems.
+
+    KILL SWITCH IS ENABLED! All non tor traffic is blocked by default! If the connection fails when browsing, your internet will be killed. This will be prevent ip leaks.
