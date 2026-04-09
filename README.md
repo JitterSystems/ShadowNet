@@ -40,11 +40,11 @@ To defeat Packet Size Analysis, ShadowNet uses kernel-level mangle rules to clam
 
     The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-5. Constant Bit Rate (CBR) Shaping (100kbit) (Cover Traffic)
+5. Constant Bit Rate (CBR) Shaping (100kbit-1mbit) (Cover Traffic)
 
-ShadowNet maintains a disciplined 100kbit pulse regardless of your actual activity.
+ShadowNet maintains a disciplined 100kbit-1mbit pulse regardless of your actual activity.
 
-    The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 100kbit window.
+    The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 100kbit-1mbit window.
 
     The Benefit: Your network signature remains a flat line. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
 
@@ -118,7 +118,7 @@ This confirms the Volumetric Masking is high enough to hide your actual browsing
     
     The Wifi interface for Parrot is usually 'wlo1' for Kali linux it's 'wlan0'
 
-    The Goal: Monitor the "Outgoing" rate while idle. It should maintain a steady baseline above 100 kbit/s. If it drops to 20-70 kbit/s, the noise floor has "stuttered" and requires a script restart.
+    The Goal: Monitor the "Outgoing" rate while idle. It should maintain a steady baseline above 100 kbit/s-1mbit. If it drops to 20-70 kbit/s, the noise floor has "stuttered" and requires a script restart.
 
 3. Sphinx Structural Uniformity (Packet Lengths)
 
@@ -153,14 +153,24 @@ Ensures the Layer 2 spoofing is actually active on the hardware.
 
     The Goal: The first address (Active) must not match the second address (Permanent). 
 
-    IPv6 Leak Suppression Test
+  6.  Volatile RAM (Anti-Forensics):
 
-Verifies that the "Backdoor" network stack is fully disabled at the kernel level.
+Bash
 
-    Command: ```bash
-    cat /proc/sys/net/ipv6/conf/all/disable_ipv6 && ip -6 addr
+ls -l /tmp/shadownet_mac.bak && df -h /tmp
 
-    The Goal: The first command must return 1 (Disabled). The second command should return nothing (Empty). If you see any addresses starting with fe80 or 2001, your IPv6 is leaking.
+Sovereign Requirement: The backup file must exist in /tmp. Note: Use df -h /tmp (without the trailing slash) to verify it is mounted as tmpfs so it wipes instantly on power-off.
+
+7. Killswitch Integrity:
+
+Bash
+
+# Run in Terminal 1:
+sudo tcpdump -i wlo1 -n 'host not 1.1.1.1'
+# Run in Terminal 2:
+curl -I https://www.google.com
+
+Sovereign Requirement: Terminal 1 must stay silent. Your curl to Google was successful, and your tcpdump captured nothing, meaning the killswitch is total.
 
 2. WebRTC & Local IP Leak Test (Browser Level)
 
@@ -173,7 +183,7 @@ ip route get 1.1.1.1
 
 The Goal: It should show traffic being routed through 127.0.0.1 or your specified TRANS_PORT gateway.
 
-Verification: Open your browser and visit a leak-test site (like browserleaks.com/webrtc). Under WebRTC Local IP, it should show "N/A", "Timed out", or a Tor-internal IP (10.x.x.x). It must never show your real local IP (192.168.1.172)
+Verification: Open your browser and visit a leak-test site (like browserleaks.com/webrtc). Under WebRTC Local IP, it should show "N/A", "Timed out", or a Tor-internal IP (10.x.x.x). It must never show your real local IP (192.168.xxx.xxx)
     
 
 🛡️ Summary of Logic
