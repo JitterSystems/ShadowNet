@@ -153,10 +153,39 @@ Ensures the Layer 2 spoofing is actually active on the hardware.
 
     The Goal: The first address (Active) must not match the second address (Permanent). 
 
+    IPv6 Leak Suppression Test
+
+Verifies that the "Backdoor" network stack is fully disabled at the kernel level.
+
+    Command: ```bash
+    cat /proc/sys/net/ipv6/conf/all/disable_ipv6 && ip -6 addr
+
+    The Goal: The first command must return 1 (Disabled). The second command should return nothing (Empty). If you see any addresses starting with fe80 or 2001, your IPv6 is leaking.
+
+2. WebRTC & Local IP Leak Test (Browser Level)
+
+This verifies that your browser cannot be "tricked" into revealing your real local IP or hardware MAC via JavaScript.
+
+    Command: While ShadowNet is active, run this in your terminal to see what the system "thinks" is the only valid route:
+    Bash
+
+ip route get 1.1.1.1
+
+The Goal: It should show traffic being routed through 127.0.0.1 or your specified TRANS_PORT gateway.
+
+Verification: Open your browser and visit a leak-test site (like browserleaks.com/webrtc). Under WebRTC Local IP, it should show "N/A", "Timed out", or a Tor-internal IP (10.x.x.x). It must never show your real local IP (192.168.1.172)
+    
+
 🛡️ Summary of Logic
+
 Diagnostic	Targeted Vulnerability	Sovereign Requirement
+
 TC/SFQ	Timing Analysis	perturb 10sec active
+
 NLOAD	Activity Correlation	Baseline > 100 kbit/s
+
 TCPDUMP	Packet Size Fingerprinting	Fixed Length (1158/1186) 1200bytes
+
 SYSCTL	Temporal/Uptime Leakage	Timestamps = 0
+
 IP/ETH	Physical ID Tracking	Active != Permanent
