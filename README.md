@@ -88,3 +88,75 @@ ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows 
     Note: ShadowNet is designed for high-latency, high-security environments. By prioritizing Flow-Invariance over speed, it provides protection against the world's most advanced traffic analysis systems.
 
     KILL SWITCH IS ENABLED! All non tor traffic is blocked by default! If the connection fails when browsing, your internet will be killed. This will be prevent ip leaks.
+
+    MAC ADDRESS SPOOFING: Spoofs mac address randomly for each session.
+
+
+THE DIAGNOSTIC TEST:
+
+1. Jitter & SFQ Randomization Test
+
+This verifies that the kernel is actively reordering packets to break timing-based correlation (breaking the "metronome" of your data).
+
+    Command:
+    Bash
+
+    tc -s qdisc show dev wlo1
+
+    ping -c 20 127.0.0.1 
+
+    What to look for: The output must show qdisc sfq with perturb 10sec. Check the sent and backlog statistics; if they are incrementing, the "Shuffling" engine is live. Also when you try the ping command, it shoud return with a randomized delayed timing.
+
+2. TLS Noise Floor Stability (The "Hum" Test)
+
+This confirms the Volumetric Masking is high enough to hide your actual browsing spikes.
+
+    Command:
+    Bash
+
+    nload (interface) 
+    
+    The Wifi interface for Parrot is usually 'wlo1' for Kali linux it's 'wlan0'
+
+    The Goal: Monitor the "Outgoing" rate while idle. It should maintain a steady baseline above 100 kbit/s. If it drops to 20-70 kbit/s, the noise floor has "stuttered" and requires a script restart.
+
+3. Sphinx Structural Uniformity (Packet Lengths)
+
+This ensures every outgoing packet looks identical in size, defeating "Packet Size Fingerprinting".
+
+    Command:
+    Bash
+
+    sudo tcpdump -i (interface) -n -c 20 'host 1.1.1.1'
+
+    The Goal: Every packet in the output must show an identical length (verified at 1158 or 1186 in your environment). Any deviation in length while idle means the "Sphinx Clamping" is compromised.
+
+4. Chrono-Anonymization (Temporal Fingerprint)
+
+Verifies that your hardware isn't leaking unique CPU timing or uptime data.
+
+    Command:
+    Bash
+
+    cat /proc/sys/net/ipv4/tcp_timestamps && ping -c 3 127.0.0.1
+
+    The Goal: tcp_timestamps must return 0. The ping must return ttl=128 to match the Windows mimicry signature.
+
+5. MAC Identity Integrity
+
+Ensures the Layer 2 spoofing is actually active on the hardware.
+
+    Command:
+    Bash
+
+    cat /sys/class/net/wlo1/address && ethtool -P (interface)
+
+    The Goal: The first address (Active) must not match the second address (Permanent). 
+
+🛡️ Summary of Logic
+Diagnostic	Targeted Vulnerability	Sovereign Requirement
+TC/SFQ	Timing Analysis	perturb 10sec active
+NLOAD	Activity Correlation	Baseline > 100 kbit/s
+TCPDUMP	Packet Size Fingerprinting	Fixed Length (1158/1186) 1200bytes
+SYSCTL	Temporal/Uptime Leakage	Timestamps = 0
+IP/ETH	Physical ID Tracking	Active != Permanent
