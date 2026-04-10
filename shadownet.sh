@@ -1,5 +1,5 @@
 #!/bin/bash
-# ShadowNet: Protocol-Level Isolation + Double-Mangle TTL + SFQ Shuffling + Kalitorify-Grade Killswitch + MAC Spoofing
+# ShadowNet: Protocol-Level Isolation + Double-Mangle TTL + SFQ Shuffling + MAC Spoofing
 
 INT_IF=$(ip route | grep default | awk '{print $5}' | head -n1)
 TOR_UID=$(id -u debian-tor)
@@ -13,7 +13,7 @@ if [ -z "$INT_IF" ]; then
 	fi
 	
 	function start_shadownet() {
-		# Temporal Obfuscation: Random start delay (5 to 45 seconds)
+		# Temporal Obfuscation
 		WAIT_TIME=$(shuf -i 5-45 -n 1)
 		echo -e "\033[1;34m[*] Temporal shift: Waiting $WAIT_TIME seconds to initialize...\033[0m"
 		sleep $WAIT_TIME
@@ -21,14 +21,13 @@ if [ -z "$INT_IF" ]; then
 		echo -e "\033[0;32m[+] Initializing ShadowNet on $INT_IF...\033[0m"
 		
 		# 0. MAC Address Spoofing
-		echo -e "\033[0;32m[+] Spoofing MAC address for $INT_IF...\033[0m"
 		ip link show "$INT_IF" | grep ether | awk '{print $2}' > "$MAC_BAK_FILE"
 		sudo ip link set "$INT_IF" down
 		sudo macchanger -r "$INT_IF"
 		sudo ip link set "$INT_IF" up
 		sleep 2
 		
-		# 1. Kernel Tweaks (Chrono-Leak & TTL Masking)
+		# 1. Kernel Tweaks
 		sudo sysctl -w net.ipv4.ip_default_ttl=128 >/dev/null
 		sudo sysctl -w net.ipv4.tcp_timestamps=0 >/dev/null
 		sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null
@@ -39,8 +38,6 @@ if [ -z "$INT_IF" ]; then
 			printf "\n# --- ShadowNet Protocol Additions ---\nVirtualAddrNetworkIPv4 10.192.0.0/10\nAutomapHostsOnResolve 1\nTransPort 127.0.0.1:$TRANS_PORT\nDNSPort 127.0.0.1:$DNS_PORT\n" >> /etc/tor/torrc
 			fi
 			systemctl restart tor@default
-			
-			# Wait for Tor to bind
 			sleep 2 
 			
 			# 3. Interface Shuffling (SFQ)
@@ -55,7 +52,7 @@ if [ -z "$INT_IF" ]; then
 				fi
 				echo "nameserver 127.0.0.1" > /etc/resolv.conf
 				
-				# 5. Firewall Reset & Policy Setup
+				# 5. Firewall Reset
 				iptables -F
 				iptables -t nat -F
 				iptables -t mangle -F
@@ -64,53 +61,54 @@ if [ -z "$INT_IF" ]; then
 				iptables -P FORWARD ACCEPT
 				iptables -P OUTPUT ACCEPT
 				
-				# --- THE OVERRIDE: DOUBLE-GATE TTL MANGLE ---
+				# 6. Mangle & NAT
 				iptables -t mangle -A OUTPUT -o $INT_IF -j TTL --ttl-set 128
 				iptables -t mangle -A POSTROUTING -o $INT_IF -j TTL --ttl-set 128
 				
-				# --- 6. NAT ROUTING ---
 				iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN
 				iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports $DNS_PORT
 				iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports $DNS_PORT
 				iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN
 				iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports $TRANS_PORT
 				
-				# --- 7. STATEFUL KILLSWITCH ---
+				# 7. Killswitch Exceptions (DNS Heartbeat Targets)
 				iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 				iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT
 				iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT
-				iptables -A OUTPUT -p udp -d 1.1.1.1 -j ACCEPT
-				iptables -A OUTPUT -p raw -d 1.1.1.1 -j ACCEPT
 				
-				# DROP THE GUILLOTINE
-				iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable
-				
-				# 8. Start Heartbeat
-				nohup python3 heartbeat.py > /dev/null 2>&1 &
-				echo $! > /tmp/shadownet_heartbeat.pid
-				
-				echo -e "\033[0;32m[!] ShadowNet Active. Kalitorify-Grade Killswitch Engaged.\033[0m"
+				DNS_LIST=("76.76.2.2" "76.76.10.2" "182.222.222.222" "45.11.45.11" "84.200.69.80" "84.200.70.40")
+				for ip in "${DNS_LIST[@]}"; do
+					iptables -A OUTPUT -p udp -d $ip -j ACCEPT
+					done
+					
+					# DROP THE GUILLOTINE
+					iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable
+					
+					# 8. Start Heartbeat (Restored to High-Throughput)
+					sudo pkill -f heartbeat.py > /dev/null 2>&1
+					nohup python3 heartbeat.py > /dev/null 2>&1 &
+					echo $! > /tmp/shadownet_heartbeat.pid
+					
+					echo -e "\033[0;32m[!] ShadowNet Active. 1Mbit/s Cover Traffic Engaged.\033[0m"
 	}
 	
 	function stop_shadownet() {
-		# Temporal Obfuscation: Random stop delay (5 to 60 seconds)
 		WAIT_TIME=$(shuf -i 5-60 -n 1)
 		echo -e "\033[1;31m[*] Pending exit... Waiting $WAIT_TIME seconds to deactivate.\033[0m"
 		sleep $WAIT_TIME
 		
 		[ -f /tmp/shadownet_heartbeat.pid ] && kill -9 $(cat /tmp/shadownet_heartbeat.pid) && rm /tmp/shadownet_heartbeat.pid
+		sudo pkill -f heartbeat.py > /dev/null 2>&1
 		
 		sudo sysctl -w net.ipv4.ip_default_ttl=64 >/dev/null
 		sudo sysctl -w net.ipv4.tcp_timestamps=1 >/dev/null
 		sudo tc qdisc del dev $INT_IF root 2>/dev/null
 		
-		# Restore DNS
 		if [ -f /tmp/resolv.conf.shadownet_bak ]; then
 			rm -f /etc/resolv.conf
 			mv /tmp/resolv.conf.shadownet_bak /etc/resolv.conf
 			fi
 			
-			# Restore Original MAC
 			if [ -f "$MAC_BAK_FILE" ]; then
 				echo -e "\033[1;33m[*] Restoring original MAC address...\033[0m"
 				ORIG_MAC=$(cat "$MAC_BAK_FILE")
@@ -131,5 +129,3 @@ if [ -z "$INT_IF" ]; then
 	start) start_shadownet ;;
 	stop) stop_shadownet ;;
 	esac
-	
-	
