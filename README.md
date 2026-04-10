@@ -161,14 +161,18 @@ Sovereign Requirement: The backup file must exist in /tmp. Note: Use df -h /tmp 
 
 7. Killswitch Integrity:
 
-Bash
+Start the shadownet tool
 
 # Run in Terminal 1:
-sudo tcpdump -i wlo1 -n 'host not 1.1.1.1'
-# Run in Terminal 2:
-curl -I https://www.google.com
 
-Sovereign Requirement: Terminal 1 must stay silent. Your curl to Google was successful, and your tcpdump captured nothing, meaning the killswitch is total.
+while true; do curl --connect-timeout 2 -s https://check.torproject.org/api/ip | grep -oE "\b([0-9]{1,3}\.){3}[0-9]{1,3}\b" || echo "BLOCK ENGAGED"; sleep 1; done
+
+# Run in Terminal 2:
+
+sudo systemctl stop tor
+
+If you see the tor ip it will continue to spam it, just turn tor off and you will see it say 'BLOCK ENGAGED'. This is when
+you know the kill-switch is working when it prevents your ip leaking after a sudden fail/disconnect
 
 2. WebRTC & Local IP Leak Test (Browser Level)
 
