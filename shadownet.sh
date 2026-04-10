@@ -13,6 +13,11 @@ if [ -z "$INT_IF" ]; then
 	fi
 	
 	function start_shadownet() {
+		# Temporal Obfuscation: Random start delay (5 to 45 seconds)
+		WAIT_TIME=$(shuf -i 5-45 -n 1)
+		echo -e "\033[1;34m[*] Temporal shift: Waiting $WAIT_TIME seconds to initialize...\033[0m"
+		sleep $WAIT_TIME
+		
 		echo -e "\033[0;32m[+] Initializing ShadowNet on $INT_IF...\033[0m"
 		
 		# 0. MAC Address Spoofing
@@ -88,6 +93,11 @@ if [ -z "$INT_IF" ]; then
 	}
 	
 	function stop_shadownet() {
+		# Temporal Obfuscation: Random stop delay (5 to 60 seconds)
+		WAIT_TIME=$(shuf -i 5-60 -n 1)
+		echo -e "\033[1;31m[*] Pending exit... Waiting $WAIT_TIME seconds to deactivate.\033[0m"
+		sleep $WAIT_TIME
+		
 		[ -f /tmp/shadownet_heartbeat.pid ] && kill -9 $(cat /tmp/shadownet_heartbeat.pid) && rm /tmp/shadownet_heartbeat.pid
 		
 		sudo sysctl -w net.ipv4.ip_default_ttl=64 >/dev/null
