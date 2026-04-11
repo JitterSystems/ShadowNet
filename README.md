@@ -1,6 +1,6 @@
 🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Mixnet Techniques)
 
-No longer rely on being unique to be anonymous like regular tor, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
+No longer rely on blending in a crowd to be anonymous like regular tor, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
 
 For Kali Linux/Parrot OS Only
 
