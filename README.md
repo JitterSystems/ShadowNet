@@ -12,7 +12,7 @@ ShadowNet is an advanced network hardening framework that transforms a standard 
 
 ShadowNet replaces standard linear packet release with Stochastic Fairness Queuing.
 
-    The Logic: Instead of a predictable "tick-tock" delivery, packets are hashed into multiple internal "buckets" and released using a shuffling algorithm. The jitter also delays the start up connection/disconnect randomly, the NSA won't know when you just first connected to ShadowNet and when you disconnected, it's all delayed.
+    The Logic: Instead of a predictable "tick-tock" delivery, packets are hashed into multiple internal "buckets" and released using a shuffling algorithm. The jitter also delays the start up connection/disconnection randomly, the NSA won't know when you just first connected to ShadowNet and when you disconnected, it's all delayed.
 
     The Benefit: It destroys Timing Correlation Attacks. By re-shuffling the internal order of packets every 10 seconds (perturb 10), it ensures that the rhythm of data leaving your home never matches the rhythm of data exiting a Tor node.
 
