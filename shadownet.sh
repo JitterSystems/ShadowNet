@@ -1,5 +1,5 @@
 #!/bin/bash
-# ShadowNet: Protocol-Level Isolation + Double-Mangle TTL + SFQ Shuffling + MAC Spoofing
+# ShadowNet: Protocol-Level Isolation + Double-Mangle TTL + SFQ Shuffling + MAC Spoofing + MTU Session Shifting
 
 INT_IF=$(ip route | grep default | awk '{print $5}' | head -n1)
 TOR_UID=$(id -u debian-tor)
@@ -13,12 +13,16 @@ if [ -z "$INT_IF" ]; then
 	fi
 	
 	function start_shadownet() {
+		# 0. MTU Session Shifting (Pick a fixed size for this session only)
+		# Range: 1200 to 1460 to stay within standard Ethernet limits
+		FIXED_MTU=$(shuf -i 1200-1460 -n 1)
+		
 		# Temporal Obfuscation
 		WAIT_TIME=$(shuf -i 5-45 -n 1)
 		echo -e "\033[1;34m[*] Temporal shift: Waiting $WAIT_TIME seconds to initialize...\033[0m"
 		sleep $WAIT_TIME
 		
-		echo -e "\033[0;32m[+] Initializing ShadowNet on $INT_IF...\033[0m"
+		echo -e "\033[0;32m[+] Initializing ShadowNet on $INT_IF [Session MTU: $FIXED_MTU]...\033[0m"
 		
 		# 0. MAC Address Spoofing
 		ip link show "$INT_IF" | grep ether | awk '{print $2}' > "$MAC_BAK_FILE"
@@ -71,7 +75,7 @@ if [ -z "$INT_IF" ]; then
 				iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN
 				iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports $TRANS_PORT
 				
-				# 7. Killswitch Exceptions (DNS Heartbeat Targets)
+				# 7. Killswitch Exceptions
 				iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
 				iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT
 				iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT
@@ -84,12 +88,12 @@ if [ -z "$INT_IF" ]; then
 					# DROP THE GUILLOTINE
 					iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable
 					
-					# 8. Start Heartbeat (Restored to High-Throughput)
+					# 8. Start Heartbeat (Passing the Session MTU)
 					sudo pkill -f heartbeat.py > /dev/null 2>&1
-					nohup python3 heartbeat.py > /dev/null 2>&1 &
+					nohup python3 heartbeat.py $FIXED_MTU > /dev/null 2>&1 &
 					echo $! > /tmp/shadownet_heartbeat.pid
 					
-					echo -e "\033[0;32m[!] ShadowNet Active. 1Mbit/s Cover Traffic Engaged.\033[0m"
+					echo -e "\033[0;32m[!] ShadowNet Active. $FIXED_MTU Byte Cover Traffic Engaged.\033[0m"
 	}
 	
 	function stop_shadownet() {
