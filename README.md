@@ -12,7 +12,7 @@ ShadowNet is an advanced network hardening framework that transforms a standard 
 
 ShadowNet replaces standard linear packet release with Stochastic Fairness Queuing.
 
-    The Logic: Instead of a predictable "tick-tock" delivery, packets are hashed into multiple internal "buckets" and released using a shuffling algorithm. The jitter also delays the start up connection/disconnection randomly, the NSA won't know when you just first connected to ShadowNet and when you disconnected, it's all delayed.
+    The Logic: Instead of a predictable "tick-tock" delivery, packets are hashed into multiple internal "buckets" and released using a shuffling algorithm. The jitter also delays the start up connection/disconnection randomly, the NSA won't know when you just first connected to ShadowNet and when you disconnected, it's all delayed. Jitter is also applied to the cover traffic as well.
 
     The Benefit: It destroys Timing Correlation Attacks. By re-shuffling the internal order of packets every 10 seconds (perturb 10), it ensures that the rhythm of data leaving your home never matches the rhythm of data exiting a Tor node.
 
@@ -32,9 +32,11 @@ ShadowNet moves beyond "Perfect Time Sync" to simulate physical hardware imperfe
 
     The Benefit: Virtual machines and automated bots often have "perfect" millisecond-accurate clocks. Real physical laptops have tiny vibrations that cause time to drift. Mimicking this drift prevents Clock-Skew Fingerprinting, making your machine look like an actual physical device rather than an anonymized instance.
 
-4. Sphinx-Style MTU Clamping (Fixed 1200b)
+4. Sphinx-Style MTU Clamping (Random Fixed Packets For Each Session)
 
-To defeat Packet Size Analysis, ShadowNet uses kernel-level mangle rules to clamp the Maximum Segment Size (MSS) to exactly 1200 bytes.
+To defeat Packet Size Analysis, ShadowNet uses kernel-level mangle rules to clamp the Maximum Segment Size (MSS) to a
+randomzied Fixed size for each session. If you used shadownet today it might be fixed at 1200bytes, tomorrow it may be 1300bytes.
+This makes it extremely hard for the NSA to link you based on the same exact fixed packets for every time you use ShadowNet
 
     The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
@@ -72,6 +74,14 @@ ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows 
     Entropy Harvesting: Restarts haveged to ensure the system has maximum randomness for encryption keys.
 
     Memory Purge: Upon deactivation, the script drops system caches and clears volatile metadata, leaving no "residue" of the session in RAM.
+
+
+10. Entropy IAT (Unpredictable Timing Between Packets Being Sent)
+
+     With the jitter already sending packets at a random time, to further enhance the jitter, Entropy IAT was
+     added so that between the packets being sent, they never send in the same randomized order (making
+     the randomization of them being sent unpredictable)
+
 
 🚀 Quick Start
 
