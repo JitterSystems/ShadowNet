@@ -12,22 +12,32 @@ if [ -z "$INT_IF" ]; then
 	exit 1
 	fi
 	
+	function get_entropy_delay() {
+		# Pulls a random byte (0-255) and maps it to a range
+		local min=$1
+		local max=$2
+		local range=$((max - min))
+		local rand_val=$(od -An -N1 -i /dev/urandom | tr -d ' ')
+		echo $(( (rand_val * range / 255) + min ))
+	}
+	
 	function start_shadownet() {
-		# 0. MTU Session Shifting (Pick a fixed size for this session only)
-		# Range: 1200 to 1460 to stay within standard Ethernet limits
-		FIXED_MTU=$(shuf -i 1200-1460 -n 1)
+		# 0. MTU Session Shifting (Pick a fixed size for this session)
+		FIXED_MTU=$(get_entropy_delay 1200 1460)
 		
-		# Temporal Obfuscation
-		WAIT_TIME=$(shuf -i 5-45 -n 1)
+		# Temporal Obfuscation (Entropy Driven)
+		WAIT_TIME=$(get_entropy_delay 5 45)
 		echo -e "\033[1;34m[*] Temporal shift: Waiting $WAIT_TIME seconds to initialize...\033[0m"
 		sleep $WAIT_TIME
 		
 		echo -e "\033[0;32m[+] Initializing ShadowNet on $INT_IF [Session MTU: $FIXED_MTU]...\033[0m"
 		
-		# 0. MAC Address Spoofing
+		# 0. MAC Address Spoofing & MTU Application
 		ip link show "$INT_IF" | grep ether | awk '{print $2}' > "$MAC_BAK_FILE"
 		sudo ip link set "$INT_IF" down
 		sudo macchanger -r "$INT_IF"
+		# Apply the session MTU to the hardware interface
+		sudo ip link set "$INT_IF" mtu "$FIXED_MTU"
 		sudo ip link set "$INT_IF" up
 		sleep 2
 		
@@ -44,8 +54,9 @@ if [ -z "$INT_IF" ]; then
 			systemctl restart tor@default
 			sleep 2 
 			
-			# 3. Interface Shuffling (SFQ)
-			sudo tc qdisc add dev $INT_IF root sfq perturb 10 2>/dev/null
+			# 3. Interface Shuffling (SFQ) with Entropy Perturb (Updated Range)
+			SFQ_JITTER=$(get_entropy_delay 5 30)
+			sudo tc qdisc add dev $INT_IF root sfq perturb $SFQ_JITTER 2>/dev/null
 			
 			# 4. DNS Isolation
 			if [ -L /etc/resolv.conf ]; then
@@ -97,7 +108,8 @@ if [ -z "$INT_IF" ]; then
 	}
 	
 	function stop_shadownet() {
-		WAIT_TIME=$(shuf -i 5-60 -n 1)
+		# Entropy Driven Exit delay
+		WAIT_TIME=$(get_entropy_delay 5 60)
 		echo -e "\033[1;31m[*] Pending exit... Waiting $WAIT_TIME seconds to deactivate.\033[0m"
 		sleep $WAIT_TIME
 		
@@ -107,6 +119,9 @@ if [ -z "$INT_IF" ]; then
 		sudo sysctl -w net.ipv4.ip_default_ttl=64 >/dev/null
 		sudo sysctl -w net.ipv4.tcp_timestamps=1 >/dev/null
 		sudo tc qdisc del dev $INT_IF root 2>/dev/null
+		
+		# Restore standard MTU
+		sudo ip link set "$INT_IF" mtu 1500
 		
 		if [ -f /tmp/resolv.conf.shadownet_bak ]; then
 			rm -f /etc/resolv.conf
