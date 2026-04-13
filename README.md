@@ -82,7 +82,16 @@ ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows 
 
      With the jitter already sending packets at a random time, to further enhance the jitter, Entropy IAT was
      added so that between the packets being sent, they never send in the same randomized order (making
-     the randomization of them being sent unpredictable)
+     the randomization of them being sent unpredictable) Added for every single byte leaving the machine, even to
+    the Cover traffic and The Start/Disconnect delay
+
+11. 6 Hops instead of 3:
+
+    ShadowNet now forces to route through 6 tor circuits, instead of the orignal 3 to further enhance privacy and anonymity.
+    Makes it even more harder to be tracked that way (Because of this, connection may be a bit slower than usual
+    but still functional and able to browse normally)
+
+    
 
 
 🚀 Quick Start
