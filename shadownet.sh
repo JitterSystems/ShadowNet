@@ -26,6 +26,10 @@ if [ -z "$INT_IF" ]; then
 		[ -f /tmp/shadownet_heartbeat.pid ] && kill -9 $(cat /tmp/shadownet_heartbeat.pid) 2>/dev/null && rm /tmp/shadownet_heartbeat.pid
 		sudo pkill -f heartbeat.py > /dev/null 2>&1
 		
+		# --- ADDED: STARTUP DROP POLICY ---
+		iptables -P OUTPUT DROP
+		# ----------------------------------
+		
 		# Shift Identity IMMEDIATELY
 		ip link show "$INT_IF" | grep ether | awk '{print $2}' > "$MAC_BAK_FILE"
 		sudo ip link set "$INT_IF" down
@@ -81,9 +85,14 @@ if [ -z "$INT_IF" ]; then
 				iptables -t nat -F
 				iptables -t mangle -F
 				iptables -X
+				
+				# --- ADDED: LIFT STARTUP DROP POLICY ---
+				iptables -P OUTPUT ACCEPT
+				# ---------------------------------------
+				
 				iptables -P INPUT ACCEPT
 				iptables -P FORWARD ACCEPT
-				iptables -P OUTPUT ACCEPT
+				
 				iptables -t mangle -A OUTPUT -o $INT_IF -j TTL --ttl-set 128
 				iptables -t mangle -A POSTROUTING -o $INT_IF -j TTL --ttl-set 128
 				iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN
@@ -139,3 +148,5 @@ if [ -z "$INT_IF" ]; then
 	start) start_shadownet ;;
 	stop) stop_shadownet ;;
 	esac
+	
+	
