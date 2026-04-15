@@ -6,6 +6,18 @@ No longer rely on blending in a crowd to be anonymous like regular tor, NOW BEIN
 
 For Kali Linux/Parrot OS
 
+Installation:
+
+chmod +x 777 *
+
+sudo bash setup.sh
+
+sudo bash shadownet.sh
+
+(Do not delete the shadownet_engine file generated when you run shadownet.sh, this is to help assist the cover traffic
+in staying consistent)
+
+
 Asynchronous Obfuscation Layer:
 
 ShadowNet is an advanced network hardening framework that transforms a standard workstation into a "Private Mixnet of One." By forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform tunnel, it eliminates the behavioral metadata that state-level adversaries use to deanonymize users.
