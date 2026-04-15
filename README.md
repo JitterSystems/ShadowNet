@@ -83,7 +83,7 @@ ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows 
      With the jitter already sending packets at a random time, to further enhance the jitter, Entropy IAT was
      added so that between the packets being sent, they never send in the same randomized order (making
      the randomization of them being sent unpredictable) Added for every single byte leaving the machine, even to
-    the Cover traffic and The Start/Disconnect delay
+    the Cover traffic and The Start/Disconnect delay, to the mac address changing and the dns requests
 
 11. 6 Hops instead of 3:
 
