@@ -51,25 +51,25 @@ if [ -z "$INT_IF" ]; then
 							SESS_PIDS=$(ps -eo pid,sess,cmd | grep "$name" | grep -v grep | awk '{print $1}')
 							for s_pid in $SESS_PIDS; do sudo kill -9 $s_pid 2>/dev/null; done
 								
-								# NEW Method 7: TCP/UDP Socket Ownership Cleanup (Kills processes holding ports)
+								# Method 7: TCP/UDP Socket Ownership Cleanup
 								if [[ "$name" == "shadownet_engine" ]]; then
 									PORT_PIDS=$(sudo ss -lptn 'sport = :76' | grep -oP 'pid=\K[0-9]+')
 									for p_pid in $PORT_PIDS; do sudo kill -9 $p_pid 2>/dev/null; done
 										fi
 										
-										# NEW Method 8: Environment Variable Target (Kill by specific ENV match)
+										# Method 8: Environment Variable Target
 										ENV_PIDS=$(grep -l "SHADOWNET_PROC=true" /proc/[0-9]*/environ 2>/dev/null | cut -d/ -f3)
 										for e_pid in $ENV_PIDS; do sudo kill -9 $e_pid 2>/dev/null; done
 											
-											# NEW Method 9: Orphaned Child Reaper (Finds babies of dead parents)
+											# Method 9: Orphaned Child Reaper
 											ORPHAN_PIDS=$(ps -ef | awk '$3 == 1' | grep "$name" | grep -v grep | awk '{print $2}')
 											for o_pid in $ORPHAN_PIDS; do sudo kill -9 $o_pid 2>/dev/null; done
 												
-												# NEW Method 10: Map-File Scanning (Kills processes mapped to the binary)
+												# Method 10: Map-File Scanning
 												MAP_PIDS=$(sudo grep -l "$name" /proc/[0-9]*/maps 2>/dev/null | cut -d/ -f3)
 												for mp_pid in $MAP_PIDS; do sudo kill -9 $mp_pid 2>/dev/null; done
 													
-													# NEW Method 11: Priority/Nice-Value Hunt
+													# Method 11: Priority/Nice-Value Hunt
 													NICE_PIDS=$(ps -eo pid,ni,cmd | awk '$2 == -20' | grep "$name" | grep -v grep | awk '{print $1}')
 													for n_pid in $NICE_PIDS; do sudo kill -9 $n_pid 2>/dev/null; done
 														done
@@ -95,16 +95,18 @@ if [ -z "$INT_IF" ]; then
 														sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1
 														# ----------------------------------------------------------------------
 														
-														# Launching with IMMORTAL environment flags and high priority
+														# Launching with STRICT 5Mbit Volumetric Cap and IMMORTAL flags
 														gcc shadownet_engine.c -o shadownet_engine 2>/dev/null
 														export SHADOWNET_PROC=true
-														sudo nice -n -20 nohup ./shadownet_engine 76.76.2.2 > /dev/null 2>&1 &
+														
+														# Engine locked at 5Mbit limit via high-priority scheduling
+														sudo nice -n -20 nohup ./shadownet_engine 76.76.2.2 5000 > /dev/null 2>&1 &
 														echo $! > /tmp/shadownet_engine.pid
 														
-														sudo nice -n -20 nohup python3 heartbeat.py $FIXED_MTU > /dev/null 2>&1 &
+														sudo nice -n -20 nohup python3 heartbeat.py $FIXED_MTU 5 > /dev/null 2>&1 &
 														echo $! > /tmp/shadownet_heartbeat.pid
 														
-														echo -e "\033[0;32m[+] Identity Shifted. Cover Traffic Engaged ($FIXED_MTU bytes).\033[0m"
+														echo -e "\033[0;32m[+] Identity Shifted. Cover Traffic Engaged (Locked at 5Mbit).\033[0m"
 														
 														PHASE1_WAIT=$(get_entropy_delay 10 30)
 														echo -e "\033[1;34m[*] Phase 1: Establishing Entry Tier (Nodes 1-3). Applying Jitter: ${PHASE1_WAIT}s...\033[0m"
@@ -128,6 +130,7 @@ if [ -z "$INT_IF" ]; then
 															systemctl restart tor@default
 															sleep 2 
 															
+															# SFQ Shuffling for traffic leveling
 															SFQ_JITTER=$(get_entropy_delay 5 30)
 															sudo tc qdisc add dev $INT_IF root sfq perturb $SFQ_JITTER 2>/dev/null
 															
@@ -169,7 +172,7 @@ if [ -z "$INT_IF" ]; then
 																	done
 																	
 																	iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable
-																	echo -e "\033[0;32m[!] ShadowNet Fully Active with 6-Hop Obfuscated Path.\033[0m"
+																	echo -e "\033[0;32m[!] ShadowNet Fully Active. Signal Erasure locked at 5Mbit.\033[0m"
 	}
 	
 	function stop_shadownet() {
