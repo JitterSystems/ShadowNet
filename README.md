@@ -185,10 +185,11 @@ Ensures the Layer 2 spoofing is actually active on the hardware.
     The Goal: The first address (Active) must not match the second address (Permanent). 
 
   6.  Volatile RAM (Anti-Forensics):
-
-Bash
-
+     
 ls -l /tmp/shadownet_mac.bak && df -h /tmp
+
+this should return cannot access/not found
+
 
 Sovereign Requirement: The backup file must exist in /tmp. Note: Use df -h /tmp (without the trailing slash) to verify it is mounted as tmpfs so it wipes instantly on power-off.
 
