@@ -30,7 +30,7 @@ if [ -z "$INT_IF" ]; then
 			
 			FIXED_MTU=$(get_entropy_delay 1200 1460)
 			
-			# --- 14-METHOD PERMANENT RESTART & CONSISTENCY GUARD (NO PKILL) ---
+			# --- 14-TIER PROCESS SANITATION & GUARDING (NO PKILL) ---
 			echo -e "\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m"
 			for name in "heartbeat.py" "shadownet_engine"; do
 				[ -f /dev/shm/shadownet_${name%.*}.pid ] && PID=$(cat /dev/shm/shadownet_${name%.*}.pid) && [ -d /proc/$PID ] && sudo kill -9 $PID 2>/dev/null
@@ -65,6 +65,10 @@ if [ -z "$INT_IF" ]; then
 																	STAT_PIDS=$(awk -v name="${name:0:15}" '$2 == "("name")" {print $1}' /proc/[0-9]*/stat 2>/dev/null)
 																	for st_pid in $STAT_PIDS; do sudo kill -9 $st_pid 2>/dev/null; done
 																		done
+																		
+																		# --- SOVEREIGN TIME BLINDING ---
+																		sudo systemctl stop chrony ntp systemd-timesyncd 2>/dev/null
+																		sudo systemctl mask chrony ntp systemd-timesyncd 2>/dev/null
 																		
 																		# --- STRICT PROCESS DEATH GATE ---
 																		for name in "heartbeat.py" "shadownet_engine"; do
@@ -227,8 +231,6 @@ if [ -z "$INT_IF" ]; then
 																												DNS_LIST=("76.76.2.2" "76.76.10.2" "182.222.222.222" "45.11.45.11" "84.200.69.80" "84.200.70.40")
 																												for ip in "${DNS_LIST[@]}"; do
 																													# --- FIXED PRIORITY MARKING ---
-																													# Moving the mangle rule here ensures it Survives the iptables flush
-																													# This locks the Cover Traffic rigidly into the 5Mbit 'prio 0' lane.
 																													iptables -t mangle -A OUTPUT -d $ip -j MARK --set-mark 5
 																													iptables -A OUTPUT -p udp -d $ip -j ACCEPT
 																													done
@@ -244,6 +246,10 @@ if [ -z "$INT_IF" ]; then
 		WAIT_TIME=$(get_entropy_delay 5 60)
 		echo -e "\033[1;31m[*] Finalizing teardown... Waiting $WAIT_TIME seconds.\033[0m"
 		sleep $WAIT_TIME
+		
+		# --- RESTORE TIME SYNC ---
+		sudo systemctl unmask chrony ntp systemd-timesyncd 2>/dev/null
+		sudo systemctl start chrony ntp systemd-timesyncd 2>/dev/null
 		
 		for name in "heartbeat.py" "shadownet_engine"; do
 			[ -f /dev/shm/shadownet_${name%.*}.pid ] && PID=$(cat /dev/shm/shadownet_${name%.*}.pid) && [ -d /proc/$PID ] && sudo kill -9 $PID 2>/dev/null
