@@ -54,11 +54,11 @@ This makes it extremely hard for the NSA to link you based on the same exact fix
 
     The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-5. Constant Bit Rate (CBR) Shaping (100kbit-1mbit) (Cover Traffic)
+5. Constant Bit Rate (CBR) Shaping (100kbit-5mbit) (Cover Traffic)
 
-ShadowNet maintains a disciplined 100kbit-1mbit pulse regardless of your actual activity.
+ShadowNet maintains a disciplined 100kbit-5mbit pulse regardless of your actual activity.
 
-    The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 100kbit-1mbit window.
+    The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 100kbit-5mbit window.
 
     The Benefit: Your network signature remains a flat line. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
 
@@ -149,7 +149,7 @@ This confirms the Volumetric Masking is high enough to hide your actual browsing
     
     The Wifi interface for Parrot is usually 'wlo1' for Kali linux it's 'wlan0'
 
-    The Goal: Monitor the "Outgoing" rate while idle. It should maintain a steady baseline above 100 kbit/s-1mbit. If it drops to 20-70 kbit/s, the noise floor has "stuttered" and requires a script restart.
+    The Goal: Monitor the "Outgoing" rate while idle. It should maintain a steady baseline above 100 kbit/s-5mbit. If it drops to 20-70 kbit/s, the noise floor has "stuttered" and requires a script restart.
 
 3. Sphinx Structural Uniformity (Packet Lengths)
 
