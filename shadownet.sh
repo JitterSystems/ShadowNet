@@ -154,6 +154,7 @@ if [ -z "$INT_IF" ]; then
 																										# -------------------------------------------------------
 																										
 																										echo -e "\033[0;32m[+] Identity Shifted. Cover Traffic Engaged (Locked at 5Mbit in RAM).\033[0m"
+																										echo -e "\033[1;32m[+] Sphinx Packet Size Assigned: ${FIXED_MTU} bytes.\033[0m"
 																										
 																										PHASE1_WAIT=$(get_entropy_delay 10 30)
 																										echo -e "\033[1;34m[*] Phase 1: Establishing Entry Tier (Nodes 1-3). Applying Jitter: ${PHASE1_WAIT}s...\033[0m"
