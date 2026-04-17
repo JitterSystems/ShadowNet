@@ -4,7 +4,7 @@ Big Thanks to Jesus for making this gain attention! Turn to Jesus before it's to
 
 No longer rely on blending in a crowd to be anonymous like regular tor, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
 
-For Kali Linux/Parrot OS
+For Kali Linux/Parrot OS (other linux distros)
 
 Installation:
 
