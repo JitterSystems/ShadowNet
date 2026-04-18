@@ -12,7 +12,9 @@ chmod +x 777 *
 
 sudo bash setup.sh
 
-sudo bash shadownet.sh
+gcc shadownet.c -o shadownet
+
+sudo ./shadownet (start/stop)
 
 (Do not delete the shadownet_engine file generated when you run shadownet.sh, this is to help assist the cover traffic
 in staying consistent)
@@ -111,7 +113,7 @@ ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows 
 
     Install Dependencies: sudo ./setup.sh
 
-    Initialize ShadowNet: sudo ./shadow.sh start
+    Initialize ShadowNet: sudo ./shadownet (start/stop)
 
     Verify Anonymity: Check your IP and run a WebRTC leak test.
 
