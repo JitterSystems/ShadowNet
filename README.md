@@ -46,15 +46,14 @@ ShadowNet moves beyond "Perfect Time Sync" to simulate physical hardware imperfe
 
     The Benefit: Virtual machines and automated bots often have "perfect" millisecond-accurate clocks. Real physical laptops have tiny vibrations that cause time to drift. Mimicking this drift prevents Clock-Skew Fingerprinting, making your machine look like an actual physical device rather than an anonymized instance.
 
-4. Sphinx-Style MTU Clamping (Random Fixed Packets For Each Session)
+4. Random Packet Sizes for each burst.
 
-To defeat Packet Size Analysis, ShadowNet uses kernel-level mangle rules to clamp the Maximum Segment Size (MSS) to a
-randomzied Fixed size for each session. If you used shadownet today it might be fixed at 1200bytes, tomorrow it may be 1300bytes.
-This makes it extremely hard for the NSA to link you based on the same exact fixed packets for every time you use ShadowNet
+For every burst that leaves your computer, they will now be assigned a different packet size for each of them. (This defeats
+the fingerprinting link)
 
     The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-5. Constant Bit Rate (CBR) Shaping (100kbit-5mbit) (Cover Traffic)
+6. Constant Bit Rate (CBR) Shaping (100kbit-5mbit) (Cover Traffic)
 
 ShadowNet maintains a disciplined 100kbit-5mbit pulse regardless of your actual activity.
 
@@ -153,16 +152,16 @@ This confirms the Volumetric Masking is high enough to hide your actual browsing
 
     The Goal: Monitor the "Outgoing" rate while idle. It should maintain a steady baseline above 100 kbit/s-5mbit. If it drops to 20-70 kbit/s, the noise floor has "stuttered" and requires a script restart.
 
-3. Sphinx Structural Uniformity (Packet Lengths)
+3. Random Packet Sizes
 
-This ensures every outgoing packet looks identical in size, defeating "Packet Size Fingerprinting".
+This ensures every outgoing packet looks random in size, defeating "Packet Size Fingerprinting".
 
     Command:
     Bash
 
     sudo tcpdump -i (interface) -n -c 20 'host 1.1.1.1'
 
-    The Goal: Every packet in the output must show an identical length (verified at 1158 or 1186 in your environment). Any deviation in length while idle means the "Sphinx Clamping" is compromised.
+    The Goal: Every packet in the output must show a random length. Any deviation in length while idle means the "Random Clamping" is compromised.
 
 4. Chrono-Anonymization (Temporal Fingerprint)
 
