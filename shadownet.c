@@ -105,7 +105,7 @@ void stop_shadownet() {
 	system("iptables -F; iptables -t nat -F; iptables -t mangle -F");
 	system("systemctl restart NetworkManager");
 	system("sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
-	printf("\033[1;31m[-] ShadowNet Deactivated.\033[0m\n");
+	printf("\033[1;31m[-] ShadowNet & Temporal Jitter Deactivated.\033[0m\n");
 }
 
 void start_shadownet() {
@@ -185,7 +185,7 @@ void start_shadownet() {
 		exit(1);
 	}
 	
-	printf("\033[0;32m[+] Identity Shifted. Cover Traffic Engaged (Locked at 5Mbit in RAM).\033[0m\n");
+	printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at 5Mbit in RAM).\033[0m\n");
 	printf("\033[1;32m[+] Sphinx Packet Size Assigned: %d bytes.\033[0m\n", fixed_mtu);
 	
 	int phase1_wait = get_entropy_delay(10, 30);
