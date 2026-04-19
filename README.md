@@ -106,6 +106,12 @@ ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows 
     Makes it even more harder to be tracked that way (Because of this, connection may be a bit slower than usual
     but still functional and able to browse normally)
 
+
+13. Temporal Jitter:
+
+    Now, the crystal within the motherboard of your computer will not reveal the network hardware informations
+    such as the make or model of it to a Global Surevillance Adversary like the NSA. Each packets within a burst has
+    a entropy iat delay which further mitigates their tracking methods.
     
 
 
