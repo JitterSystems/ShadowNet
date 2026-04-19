@@ -112,6 +112,12 @@ int main(int argc, char *argv[]) {
 		
 		int burst_size = 10 + (rand() % 13);
 		for(int b = 0; b < burst_size; b++) {
+			// STRONGER TEMPORAL JITTER: Masking hardware clock skew
+			struct timespec micro_req;
+			micro_req.tv_sec = 0;
+			micro_req.tv_nsec = (rand() % 30000); // Randomized micro-delay (Strengthened to 30us)
+			nanosleep(&micro_req, NULL);
+			
 			sendto(sock, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
 		}
 		
