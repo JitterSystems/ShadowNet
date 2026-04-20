@@ -186,7 +186,7 @@ void start_shadownet() {
 	}
 	
 	printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at 5Mbit in RAM).\033[0m\n");
-	printf("\033[1;32m[+] Sphinx Packet Size Assigned: %d bytes.\033[0m\n", fixed_mtu);
+	printf("\033[1;32m[+] Packet Size Assigned: %d bytes.\033[0m\n", fixed_mtu);
 	
 	int phase1_wait = get_entropy_delay(10, 30);
 	printf("\033[1;34m[*] Phase 1: Establishing Entry Tier (Nodes 1-3). Applying Jitter: %ds...\033[0m\n", phase1_wait);
