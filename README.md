@@ -97,21 +97,23 @@ ShadowNet modifies the kernel's default IP behavior to mimic a standard Windows 
 
      With the jitter already sending packets at a random time, to further enhance the jitter, Entropy IAT was
      added so that between the packets being sent, they never send in the same randomized order (making
-     the randomization of them being sent unpredictable) Added for every single byte leaving the machine, even to
-    the Cover traffic and The Start/Disconnect delay, to the mac address changing and the dns requests
+     the randomization of them being sent unpredictable) Added for every single burst leaving the machine and
+    The Start/Disconnect delay, to the mac address changing and the dns requests.
 
-12. 6 Hops instead of 3:
+13. 6 Hops instead of 3:
 
     ShadowNet now forces to route through 6 tor circuits, instead of the orignal 3 to further enhance privacy and anonymity.
     Makes it even more harder to be tracked that way (Because of this, connection may be a bit slower than usual
     but still functional and able to browse normally)
 
 
-13. Temporal Jitter:
+14. Temporal Jitter:
 
     Now, the crystal within the motherboard of your computer will not reveal the network hardware informations
     such as the make or model of it to a Global Surevillance Adversary like the NSA. Each packets within a burst has
-    a entropy iat delay which further mitigates their tracking methods.
+    a entropy iat delay which further mitigates their tracking methods. An entropy IAT has been added to each burst
+    leaving your machine and also to every single individual packets being sent. This adds a random delay to the timing
+    of every packets.
     
 
 
