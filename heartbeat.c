@@ -92,30 +92,30 @@ int main(int argc, char *argv[]) {
 			last_dns_time = curr_time;
 		}
 		
-		// 2. Heartbeat with MTU JITTER Logic
-		// We pick a random payload size between 600 bytes and the session max_mtu
-		int jittered_payload_size = (rand() % (max_mtu - 600 + 1)) + 600 - 42; 
-		if (jittered_payload_size < 64) jittered_payload_size = 64;
-		
-		memset(packet, 0, 4096);
-		iph->ihl = 5; iph->version = 4; iph->tos = 0;
-		iph->tot_len = sizeof(struct iphdr) + sizeof(struct udphdr) + jittered_payload_size;
-		iph->id = htons(rand() % 65535); iph->frag_off = 0; iph->ttl = 128;
-		iph->protocol = IPPROTO_UDP;
-		iph->daddr = sin.sin_addr.s_addr;
-		iph->check = csum((unsigned short *) packet, iph->tot_len);
-		
-		udph->source = htons(443);
-		udph->dest = htons(443);
-		udph->len = htons(sizeof(struct udphdr) + jittered_payload_size);
-		udph->check = 0;
-		
+		// 2. Heartbeat with PER-PACKET JITTER Logic
 		int burst_size = 10 + (rand() % 13);
 		for(int b = 0; b < burst_size; b++) {
+			// Calculate a new random size for EVERY SINGLE PACKET
+			int jittered_payload_size = (rand() % (max_mtu - 600 + 1)) + 600 - 42; 
+			if (jittered_payload_size < 64) jittered_payload_size = 64;
+			
+			memset(packet, 0, 4096);
+			iph->ihl = 5; iph->version = 4; iph->tos = 0;
+			iph->tot_len = sizeof(struct iphdr) + sizeof(struct udphdr) + jittered_payload_size;
+			iph->id = htons(rand() % 65535); iph->frag_off = 0; iph->ttl = 128;
+			iph->protocol = IPPROTO_UDP;
+			iph->daddr = sin.sin_addr.s_addr;
+			iph->check = csum((unsigned short *) packet, iph->tot_len);
+			
+			udph->source = htons(443);
+			udph->dest = htons(443);
+			udph->len = htons(sizeof(struct udphdr) + jittered_payload_size);
+			udph->check = 0;
+			
 			// STRONGER TEMPORAL JITTER: Masking hardware clock skew
 			struct timespec micro_req;
 			micro_req.tv_sec = 0;
-			micro_req.tv_nsec = (rand() % 30000); // Randomized micro-delay (Strengthened to 30us)
+			micro_req.tv_nsec = (rand() % 30000); 
 			nanosleep(&micro_req, NULL);
 			
 			sendto(sock, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
