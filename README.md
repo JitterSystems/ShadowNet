@@ -16,7 +16,7 @@ gcc shadownet.c -o shadownet
 
 sudo ./shadownet (start/stop)
 
-(Do not delete the shadownet_engine file generated when you run shadownet.sh, this is to help assist the cover traffic
+(Do not delete the shadownet_engine file generated when you run ./shadownet, this is to help assist the cover traffic
 in staying consistent)
 
 
