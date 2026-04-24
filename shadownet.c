@@ -3,6 +3,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <sys/types.h>
+#include <signal.h>
 
 void get_interface(char *iface) {
 	FILE *fp = popen("ip route | grep default | awk '{print $5}' | head -n1", "r");
@@ -62,9 +63,26 @@ void execute_14_tier_sanitation(const char *name) {
 	}
 }
 
+void trigger_emergency_lockdown() {
+	system("iptables -P OUTPUT DROP; iptables -P INPUT DROP; iptables -P FORWARD DROP");
+	system("iptables -F; iptables -t nat -F; iptables -t mangle -F");
+	execute_14_tier_sanitation("heartbeat");
+	execute_14_tier_sanitation("shadownet_engine");
+	printf("\n\033[0;31m\a[!!!] SHADOWNET EMERGENCY LOCKDOWN ENGAGED. INTERNET PERMANENTLY KILLED.\033[0m\n");
+	printf("\033[1;33m[*] Run 'sudo ./shadownet stop' manually to restore connectivity.\033[0m\n");
+	exit(1);
+}
+
+void handle_sigint(int sig) {
+	trigger_emergency_lockdown();
+}
+
 void stop_shadownet() {
 	char int_if[32] = {0};
 	get_interface(int_if);
+	
+	system("iptables -P OUTPUT DROP; iptables -P INPUT DROP; iptables -P FORWARD DROP");
+	system("iptables -F; iptables -t nat -F; iptables -t mangle -F");
 	
 	int exit_dns_jitter = get_entropy_delay(2, 8);
 	printf("\033[1;31m[*] Pending exit... Applying Exit DNS Entropy: %ds...\033[0m\n", exit_dns_jitter);
@@ -102,16 +120,19 @@ void stop_shadownet() {
 	"sudo macchanger -m $(cat /dev/shm/shadownet_mac.bak) $IFACE; "
 	"sudo ip link set $IFACE up; rm /dev/shm/shadownet_mac.bak; fi");
 	
+	system("iptables -P OUTPUT ACCEPT; iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT");
 	system("iptables -F; iptables -t nat -F; iptables -t mangle -F");
 	system("systemctl restart NetworkManager");
 	system("sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
-	printf("\033[1;31m[-] ShadowNet & Temporal Jitter Deactivated.\033[0m\n");
+	printf("\033[1;31m[-] ShadowNet Deactivated. Integrity Restored.\033[0m\n");
 }
 
 void start_shadownet() {
 	char int_if[32] = {0};
 	get_interface(int_if);
 	char cmd[2048];
+	
+	signal(SIGINT, handle_sigint);
 	
 	if (access("./heartbeat.c", F_OK) == -1 || access("./shadownet_engine.c", F_OK) == -1) {
 		printf("\033[0;31m[!] CRITICAL: heartbeat.c or shadownet_engine.c missing. Aborting.\033[0m\n");
@@ -149,7 +170,7 @@ void start_shadownet() {
 	system(cmd);
 	sprintf(cmd, "sudo ip link set %s mtu %d", int_if, fixed_mtu);
 	system(cmd);
-	sprintf(cmd, "sudo ip link set %s up", int_if);
+	sprintf(cmd, "sudo ip link set %s up", int_if, fixed_mtu);
 	system(cmd);
 	
 	printf("\033[1;36m[*] Hardening Interface & System Persistence (Anti-Sleep)...\033[0m\n");
@@ -179,85 +200,95 @@ void start_shadownet() {
 	system(cmd);
 	
 	sleep(2);
-	if (system("pgrep -f '/dev/shm/shadownet_engine' > /dev/null") != 0 || system("pgrep -f '/dev/shm/heartbeat' > /dev/null") != 0) {
+	if (system("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 || 
+		system("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0) {
 		printf("\033[0;31m[!] CRITICAL: Core processes failed to lock in RAM. Aborting for OpSec.\033[0m\n");
-		stop_shadownet();
-		exit(1);
-	}
-	
-	printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at 5Mbit in RAM).\033[0m\n");
-	printf("\033[1;32m[+] Packet Size Assigned: %d bytes.\033[0m\n", fixed_mtu);
-	
-	int phase1_wait = get_entropy_delay(10, 30);
-	printf("\033[1;34m[*] Phase 1: Establishing Entry Tier (Nodes 1-3). Applying Jitter: %ds...\033[0m\n", phase1_wait);
-	sleep(phase1_wait);
-	
-	int phase2_wait = get_entropy_delay(15, 45);
-	printf("\033[1;35m[*] Phase 2: Extending to Exit Tier (Nodes 4-6). Applying Entropy IAT: %ds...\033[0m\n", phase2_wait);
-	sleep(phase2_wait);
-	
-	printf("\033[0;32m[+] 6-Hop Chain Established. Initializing ShadowNet Routing Protocol...\033[0m\n");
-	
-	system("sudo sysctl -w net.ipv4.ip_default_ttl=128 >/dev/null; "
-	"sudo sysctl -w net.ipv4.tcp_timestamps=0 >/dev/null; "
-	"sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null; "
-	"sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1");
-	
-	system("if ! grep -q 'ShadowNet Protocol Additions' /etc/tor/torrc; then "
-	"printf '\\n# --- ShadowNet Protocol Additions ---\\nVirtualAddrNetworkIPv4 10.192.0.0/10\\nAutomapHostsOnResolve 1\\nTransPort 127.0.0.1:9040\\nDNSPort 127.0.0.1:5353\\nLongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n# Enforce 6-Hop Circuitry\\nCircuitBuildTimeout 60\\nNumEntryGuards 3\\n' >> /etc/tor/torrc; "
-	"fi; systemctl restart tor@default; sleep 2");
-	
-	// --- HARD 5MBIT TOTAL LOCK (CEIL REDUCED TO 5MBIT FOR ALL) ---
-	sprintf(cmd, "sudo tc qdisc del dev %s root 2>/dev/null; "
-	"sudo tc qdisc add dev %s root handle 1: htb default 10; "
-	"sudo tc class add dev %s parent 1: classid 1:1 htb rate 5mbit ceil 5mbit; " // ROOT IS 5M
-	"sudo tc class add dev %s parent 1:1 classid 1:5 htb rate 4mbit ceil 5mbit prio 0; " // COVER TRAFFIC
-	"sudo tc class add dev %s parent 1:1 classid 1:10 htb rate 1mbit ceil 5mbit prio 7; " // DEFAULT/USER
-	"sudo tc filter add dev %s protocol ip parent 1:0 prio 1 handle 5 fw flowid 1:5", 
-	int_if, int_if, int_if, int_if, int_if, int_if);
-	system(cmd);
-	
-	int sfq_jitter = get_entropy_delay(5, 30);
-	sprintf(cmd, "sudo tc qdisc add dev %s parent 1:5 handle 50: sfq perturb %d; "
-	"sudo tc qdisc add dev %s parent 1:10 handle 100: sfq perturb %d", 
-	int_if, sfq_jitter, int_if, sfq_jitter);
-	system(cmd);
-	
-	system("if [ -L /etc/resolv.conf ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; rm -f /etc/resolv.conf; "
-	"elif [ ! -f /dev/shm/resolv.conf.shadownet_bak ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; fi");
-	
-	int dns_jitter = get_entropy_delay(1, 5);
-	printf("\033[1;33m[*] Decoupling DNS Timings: %ds IAT delay...\033[0m\n", dns_jitter);
-	sleep(dns_jitter);
-	system("echo 'nameserver 127.0.0.1' > /etc/resolv.conf");
-	
-	system("iptables -F; iptables -t nat -F; iptables -t mangle -F; iptables -X");
-	system("iptables -P OUTPUT ACCEPT; iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT");
-	
-	sprintf(cmd, "iptables -t mangle -A OUTPUT -o %s -j TTL --ttl-set 128; "
-	"iptables -t mangle -A POSTROUTING -o %s -j TTL --ttl-set 128", int_if, int_if);
-	system(cmd);
-	
-	system("TOR_UID=$(id -u debian-tor); iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN; "
-	"iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 5353; "
-	"iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports 5353; "
-	"iptables -A OUTPUT -p udp --dport 53 ! -d 127.0.0.1 -j DROP; "
-	"iptables -A OUTPUT -p tcp --dport 53 ! -d 127.0.0.1 -j DROP; "
-	"iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN; "
-	"iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports 9040; "
-	"iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT; "
-	"iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT; "
-	"iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT");
-	
-	const char *dns_list[] = {"76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11", "84.200.69.80", "84.200.70.40"};
-	for(int i = 0; i < 6; i++) {
-		sprintf(cmd, "iptables -t mangle -A OUTPUT -d %s -j MARK --set-mark 5; "
-		"iptables -A OUTPUT -p udp -d %s -j ACCEPT", dns_list[i], dns_list[i]);
+	stop_shadownet();
+	exit(1);
+		}
+		
+		printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at 5Mbit in RAM).\033[0m\n");
+		printf("\033[1;32m[+] Packet Size Assigned: %d bytes.\033[0m\n", fixed_mtu);
+		
+		int phase1_wait = get_entropy_delay(10, 30);
+		printf("\033[1;34m[*] Phase 1: Establishing Entry Tier (Nodes 1-3). Applying Jitter: %ds...\033[0m\n", phase1_wait);
+		sleep(phase1_wait);
+		
+		int phase2_wait = get_entropy_delay(15, 45);
+		printf("\033[1;35m[*] Phase 2: Extending to Exit Tier (Nodes 4-6). Applying Entropy IAT: %ds...\033[0m\n", phase2_wait);
+		sleep(phase2_wait);
+		
+		printf("\033[0;32m[+] 6-Hop Chain Established. Initializing ShadowNet Routing Protocol...\033[0m\n");
+		
+		system("sudo sysctl -w net.ipv4.ip_default_ttl=128 >/dev/null; "
+		"sudo sysctl -w net.ipv4.tcp_timestamps=0 >/dev/null; "
+		"sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null; "
+		"sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1");
+		
+		system("if ! grep -q 'ShadowNet Protocol Additions' /etc/tor/torrc; then "
+		"printf '\\n# --- ShadowNet Protocol Additions ---\\nVirtualAddrNetworkIPv4 10.192.0.0/10\\nAutomapHostsOnResolve 1\\nTransPort 127.0.0.1:9040\\nDNSPort 127.0.0.1:5353\\nLongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n# Enforce 6-Hop Circuitry\\nCircuitBuildTimeout 60\\nNumEntryGuards 3\\n' >> /etc/tor/torrc; "
+		"fi; systemctl restart tor@default; sleep 2");
+		
+		sprintf(cmd, "sudo tc qdisc del dev %s root 2>/dev/null; "
+		"sudo tc qdisc add dev %s root handle 1: htb default 10; "
+		"sudo tc class add dev %s parent 1: classid 1:1 htb rate 5mbit ceil 5mbit; "
+		"sudo tc class add dev %s parent 1:1 classid 1:5 htb rate 4mbit ceil 5mbit prio 0; "
+		"sudo tc class add dev %s parent 1:1 classid 1:10 htb rate 1mbit ceil 5mbit prio 7; "
+		"sudo tc filter add dev %s protocol ip parent 1:0 prio 1 handle 5 fw flowid 1:5", 
+		int_if, int_if, int_if, int_if, int_if, int_if);
 		system(cmd);
-	}
-	
-	system("iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable");
-	printf("\033[0;32m[!] ShadowNet Fully Active. Signal Erasure locked at 5Mbit.\033[0m\n");
+		
+		int sfq_jitter = get_entropy_delay(5, 30);
+		sprintf(cmd, "sudo tc qdisc add dev %s parent 1:5 handle 50: sfq perturb %d; "
+		"sudo tc qdisc add dev %s parent 1:10 handle 100: sfq perturb %d", 
+		int_if, sfq_jitter, int_if, sfq_jitter);
+		system(cmd);
+		
+		system("if [ -L /etc/resolv.conf ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; rm -f /etc/resolv.conf; "
+		"elif [ ! -f /dev/shm/resolv.conf.shadownet_bak ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; fi");
+		
+		int dns_jitter = get_entropy_delay(1, 5);
+		printf("\033[1;33m[*] Decoupling DNS Timings: %ds IAT delay...\033[0m\n", dns_jitter);
+		sleep(dns_jitter);
+		system("echo 'nameserver 127.0.0.1' > /etc/resolv.conf");
+		
+		system("iptables -F; iptables -t nat -F; iptables -t mangle -F; iptables -X");
+		system("iptables -P OUTPUT ACCEPT; iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT");
+		
+		sprintf(cmd, "iptables -t mangle -A OUTPUT -o %s -j TTL --ttl-set 128; "
+		"iptables -t mangle -A POSTROUTING -o %s -j TTL --ttl-set 128", int_if, int_if);
+		system(cmd);
+		
+		system("TOR_UID=$(id -u debian-tor); iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN; "
+		"iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 5353; "
+		"iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports 5353; "
+		"iptables -A OUTPUT -p udp --dport 53 ! -d 127.0.0.1 -j DROP; "
+		"iptables -A OUTPUT -p tcp --dport 53 ! -d 127.0.0.1 -j DROP; "
+		"iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN; "
+		"iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports 9040; "
+		"iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT; "
+		"iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT; "
+		"iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT");
+		
+		const char *dns_list[] = {"76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11", "84.200.69.80", "84.200.70.40"};
+		for(int i = 0; i < 6; i++) {
+			sprintf(cmd, "iptables -t mangle -A OUTPUT -d %s -j MARK --set-mark 5; "
+			"iptables -A OUTPUT -p udp -d %s -j ACCEPT", dns_list[i], dns_list[i]);
+			system(cmd);
+		}
+		
+		system("iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable");
+		printf("\033[0;32m[!] ShadowNet Fully Active. Signal Erasure locked at 5Mbit.\033[0m\n");
+		
+		printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Monitoring heartbeat, engine, tor, and shadownet...\033[0m\n");
+		while(1) {
+			if (system("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 || 
+				system("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 ||
+				system("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0 ||
+				system("ps -ef | grep './shadownet start' | grep -v grep > /dev/null") != 0) {
+				trigger_emergency_lockdown();
+				}
+		}
 }
 
 int main(int argc, char *argv[]) {
