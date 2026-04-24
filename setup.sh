@@ -28,3 +28,4 @@ if [[ $EUID -ne 0 ]]; then
 	echo -e "${GREEN}[V] Setup Complete.${NC}"
 	echo -e "${GREEN}[*] Next Step: gcc shadownet.c -o shadownet${NC}"
 	echo -e "${GREEN}[*] Then: sudo ./shadownet start${NC}"
+	
