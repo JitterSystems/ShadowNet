@@ -52,29 +52,29 @@ int main(int argc, char *argv[]) {
 	const char *fake_domains[] = {"google.com", "bing.com", "duckduckgo.com", "protonmail.com", "github.com"};
 	int num_dests = 6;
 	int num_domains = 5;
-	
+
 	srand(time(NULL));
-	
+
 	int sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
 	if(sock < 0) exit(1);
 	int one = 1;
 	setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one));
-	
+
 	char packet[4096];
 	struct iphdr *iph = (struct iphdr *) packet;
 	struct udphdr *udph = (struct udphdr *) (packet + sizeof(struct iphdr));
-	
+
 	struct sockaddr_in sin;
 	sin.sin_family = AF_INET;
-	
+
 	struct timespec req, rem;
 	time_t last_dns_time = time(NULL);
-	
+
 	while(1) {
 		time_t curr_time = time(NULL);
 		int dest_idx = rand() % num_dests;
 		sin.sin_addr.s_addr = inet_addr(destinations[dest_idx]);
-		
+
 		// 1. DNS Entropy Logic (Remains Unchanged)
 		if(difftime(curr_time, last_dns_time) > get_dns_iat()) {
 			memset(packet, 0, 4096);
@@ -86,19 +86,19 @@ int main(int argc, char *argv[]) {
 			udph->source = htons(49152 + (rand() % 16383));
 			udph->dest = htons(53); udph->len = htons(sizeof(struct udphdr) + 32);
 			char *dns_data = packet + sizeof(struct iphdr) + sizeof(struct udphdr);
-			dns_data[0] = rand() % 255; dns_data[1] = rand() % 255; dns_data[2] = 0x01; 
+			dns_data[0] = rand() % 255; dns_data[1] = rand() % 255; dns_data[2] = 0x01;
 			strcpy(dns_data + 12, fake_domains[rand() % num_domains]);
 			sendto(sock, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
 			last_dns_time = curr_time;
 		}
-		
+
 		// 2. Heartbeat with PER-PACKET JITTER Logic
 		int burst_size = 10 + (rand() % 13);
 		for(int b = 0; b < burst_size; b++) {
 			// Calculate a new random size for EVERY SINGLE PACKET
-			int jittered_payload_size = (rand() % (max_mtu - 600 + 1)) + 600 - 42; 
+			int jittered_payload_size = (rand() % (max_mtu - 600 + 1)) + 600 - 42;
 			if (jittered_payload_size < 64) jittered_payload_size = 64;
-			
+
 			memset(packet, 0, 4096);
 			iph->ihl = 5; iph->version = 4; iph->tos = 0;
 			iph->tot_len = sizeof(struct iphdr) + sizeof(struct udphdr) + jittered_payload_size;
@@ -106,21 +106,21 @@ int main(int argc, char *argv[]) {
 			iph->protocol = IPPROTO_UDP;
 			iph->daddr = sin.sin_addr.s_addr;
 			iph->check = csum((unsigned short *) packet, iph->tot_len);
-			
+
 			udph->source = htons(443);
 			udph->dest = htons(443);
 			udph->len = htons(sizeof(struct udphdr) + jittered_payload_size);
 			udph->check = 0;
-			
+
 			// STRONGER TEMPORAL JITTER: Masking hardware clock skew
 			struct timespec micro_req;
 			micro_req.tv_sec = 0;
-			micro_req.tv_nsec = (rand() % 30000); 
+			micro_req.tv_nsec = (rand() % 30000);
 			nanosleep(&micro_req, NULL);
-			
+
 			sendto(sock, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
 		}
-		
+
 		double jitter = get_entropy_jitter();
 		req.tv_sec = 0;
 		req.tv_nsec = (long)(jitter * 1000000000.0);
