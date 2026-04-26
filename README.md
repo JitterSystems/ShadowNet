@@ -115,6 +115,11 @@ a entropy iat delay which further mitigates their tracking methods. An entropy I
 leaving your machine and also to every single individual packets being sent. This adds a random delay to the timing
 of every packets.
 
+15. Enhanced torrc config:
+
+NewCircuitPeriod, MaxCircuitDirtiness and EnforceDistinctSubnets has been set to 1 to ensure that tor never builds a circuit
+with relays within the same subnet and also making sure that your ip/circuit changes every 1 second (or 1-30 seconds).
+
 
 
 🚀 Quick Start
