@@ -225,9 +225,10 @@ void start_shadownet() {
 		"sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null; "
 		"sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1");
 
-		system("if ! grep -q 'ShadowNet Protocol Additions' /etc/tor/torrc; then "
-		"printf '\\n# --- ShadowNet Protocol Additions ---\\nVirtualAddrNetworkIPv4 10.192.0.0/10\\nAutomapHostsOnResolve 1\\nTransPort 127.0.0.1:9040\\nDNSPort 127.0.0.1:5353\\nLongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n# Enforce 6-Hop Circuitry\\nCircuitBuildTimeout 60\\nNumEntryGuards 3\\nEnforceDistinctSubnets 1\\nNewCircuitPeriod 1\\nMaxCircuitDirtiness 1\\n' >> /etc/tor/torrc; "
-		"fi; systemctl restart tor@default; sleep 2");
+		// Logic updated to wipe existing ShadowNet block and re-add fresh
+		system("sudo sed -i '/# --- ShadowNet Protocol Additions ---/,/# --- End ShadowNet ---/d' /etc/tor/torrc; "
+		"printf '\\n# --- ShadowNet Protocol Additions ---\\nVirtualAddrNetworkIPv4 10.192.0.0/10\\nAutomapHostsOnResolve 1\\nTransPort 127.0.0.1:9040\\nDNSPort 127.0.0.1:5353\\nLongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n# Enforce 6-Hop Circuitry\\nCircuitBuildTimeout 60\\nNumEntryGuards 3\\nEnforceDistinctSubnets 1\\nNewCircuitPeriod 1\\nMaxCircuitDirtiness 1\\n# --- End ShadowNet ---\\n' >> /etc/tor/torrc; "
+		"systemctl restart tor@default; sleep 2");
 
 		sprintf(cmd, "sudo tc qdisc del dev %s root 2>/dev/null; "
 		"sudo tc qdisc add dev %s root handle 1: htb default 10; "
