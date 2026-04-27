@@ -210,9 +210,17 @@ void start_shadownet() {
 		printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at 5Mbit in RAM).\033[0m\n");
 		printf("\033[1;32m[+] Packet Size Assigned: %d bytes.\033[0m\n", fixed_mtu);
 
+		int pre_phase1_jitter = get_entropy_delay(5, 45);
+		printf("\033[1;33m[*] Applying Entropy IAT: %ds before Tier 1 access...\033[0m\n", pre_phase1_jitter);
+		sleep(pre_phase1_jitter);
+
 		int phase1_wait = get_entropy_delay(10, 30);
 		printf("\033[1;34m[*] Phase 1: Establishing Entry Tier (Nodes 1-3). Applying Jitter: %ds...\033[0m\n", phase1_wait);
 		sleep(phase1_wait);
+
+		int pre_phase2_jitter = get_entropy_delay(10, 30);
+		printf("\033[1;33m[*] Applying Entropy IAT: %ds before Tier 4 transition...\033[0m\n", pre_phase2_jitter);
+		sleep(pre_phase2_jitter);
 
 		int phase2_wait = get_entropy_delay(15, 45);
 		printf("\033[1;35m[*] Phase 2: Extending to Exit Tier (Nodes 4-6). Applying Entropy IAT: %ds...\033[0m\n", phase2_wait);
@@ -225,7 +233,6 @@ void start_shadownet() {
 		"sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null; "
 		"sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1");
 
-		// Logic updated to wipe existing ShadowNet block and re-add fresh
 		system("sudo sed -i '/# --- ShadowNet Protocol Additions ---/,/# --- End ShadowNet ---/d' /etc/tor/torrc; "
 		"printf '\\n# --- ShadowNet Protocol Additions ---\\nVirtualAddrNetworkIPv4 10.192.0.0/10\\nAutomapHostsOnResolve 1\\nTransPort 127.0.0.1:9040\\nDNSPort 127.0.0.1:5353\\nLongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n# Enforce 6-Hop Circuitry\\nCircuitBuildTimeout 60\\nNumEntryGuards 3\\nEnforceDistinctSubnets 1\\nNewCircuitPeriod 1\\nMaxCircuitDirtiness 1\\n# --- End ShadowNet ---\\n' >> /etc/tor/torrc; "
 		"systemctl restart tor@default; sleep 2");
@@ -256,7 +263,6 @@ void start_shadownet() {
 		system("iptables -F; iptables -t nat -F; iptables -t mangle -F; iptables -X");
 		system("iptables -P OUTPUT ACCEPT; iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT");
 
-		// Forcefully clamp MSS to ensure headers + data never surpass the limit
 		system("iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 860");
 
 		sprintf(cmd, "iptables -t mangle -A OUTPUT -o %s -j TTL --ttl-set 128; "
