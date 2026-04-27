@@ -139,7 +139,7 @@ void start_shadownet() {
 		exit(1);
 	}
 
-	int fixed_mtu = get_entropy_delay(1200, 1460);
+	int fixed_mtu = get_entropy_delay(900, 1100);
 
 	printf("\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m\n");
 	execute_14_tier_sanitation("heartbeat");
@@ -254,6 +254,9 @@ void start_shadownet() {
 
 		system("iptables -F; iptables -t nat -F; iptables -t mangle -F; iptables -X");
 		system("iptables -P OUTPUT ACCEPT; iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT");
+
+		// Forcefully clamp MSS to ensure headers + data never surpass the limit
+		system("iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 860");
 
 		sprintf(cmd, "iptables -t mangle -A OUTPUT -o %s -j TTL --ttl-set 128; "
 		"iptables -t mangle -A POSTROUTING -o %s -j TTL --ttl-set 128", int_if, int_if);
