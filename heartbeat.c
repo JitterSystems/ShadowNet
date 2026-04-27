@@ -47,7 +47,7 @@ double get_dns_iat() {
 
 int main(int argc, char *argv[]) {
 	// This is the ceiling MTU from shadownet.c
-	int max_mtu = (argc > 1) ? atoi(argv[1]) : 1200;
+	int max_mtu = (argc > 1) ? atoi(argv[1]) : 1100;
 	const char *destinations[] = {"76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11", "84.200.69.80", "84.200.70.40"};
 	const char *fake_domains[] = {"google.com", "bing.com", "duckduckgo.com", "protonmail.com", "github.com"};
 	int num_dests = 6;
@@ -75,7 +75,7 @@ int main(int argc, char *argv[]) {
 		int dest_idx = rand() % num_dests;
 		sin.sin_addr.s_addr = inet_addr(destinations[dest_idx]);
 
-		// 1. DNS Entropy Logic (Remains Unchanged)
+		// 1. DNS Entropy Logic
 		if(difftime(curr_time, last_dns_time) > get_dns_iat()) {
 			memset(packet, 0, 4096);
 			iph->ihl = 5; iph->version = 4; iph->tos = 0;
@@ -95,8 +95,8 @@ int main(int argc, char *argv[]) {
 		// 2. Heartbeat with PER-PACKET JITTER Logic
 		int burst_size = 10 + (rand() % 13);
 		for(int b = 0; b < burst_size; b++) {
-			// Calculate a new random size for EVERY SINGLE PACKET
-			int jittered_payload_size = (rand() % (max_mtu - 600 + 1)) + 600 - 42;
+			// Updated range ensures even at max jitter, we stay under the 1100 ceiling
+			int jittered_payload_size = (rand() % (1100 - 500 + 1)) + 500 - 42;
 			if (jittered_payload_size < 64) jittered_payload_size = 64;
 
 			memset(packet, 0, 4096);
@@ -112,7 +112,6 @@ int main(int argc, char *argv[]) {
 			udph->len = htons(sizeof(struct udphdr) + jittered_payload_size);
 			udph->check = 0;
 
-			// STRONGER TEMPORAL JITTER: Masking hardware clock skew
 			struct timespec micro_req;
 			micro_req.tv_sec = 0;
 			micro_req.tv_nsec = (rand() % 30000);
