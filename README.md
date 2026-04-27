@@ -48,7 +48,7 @@ The Logic: Using adjtimex, the protocol introduces a microscopic, random oscilla
 
 The Benefit: Virtual machines and automated bots often have "perfect" millisecond-accurate clocks. Real physical laptops have tiny vibrations that cause time to drift. Mimicking this drift prevents Clock-Skew Fingerprinting, making your machine look like an actual physical device rather than an anonymized instance.
 
-4. Random Packet Sizes for each burst.
+4. Random Packet Sizes for each burst and for each individual packets. (Per packet & Per Burst)
 
 For every burst that leaves your computer, they will now be assigned a different packet size for each of them. (This defeats
 the fingerprinting link)
