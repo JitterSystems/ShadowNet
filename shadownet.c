@@ -128,6 +128,10 @@ void stop_shadownet() {
 }
 
 void start_shadownet() {
+	int start_iat_jitter = get_entropy_delay(5, 20);
+	printf("\033[1;33m[*] Applying Entropy IAT: %ds before starting ShadowNet...\033[0m\n", start_iat_jitter);
+	sleep(start_iat_jitter);
+
 	char int_if[32] = {0};
 	get_interface(int_if);
 	char cmd[2048];
@@ -173,19 +177,15 @@ void start_shadownet() {
 	sprintf(cmd, "sudo ip link set %s up", int_if);
 	system(cmd);
 
-	printf("\033[1;36m[*] Hardening Interface & System Persistence (Anti-Sleep)...\033[0m\n");
-	sprintf(cmd, "sudo iw dev %s set power_save off 2>/dev/null", int_if);
-	system(cmd);
-	sprintf(cmd, "sudo ethtool -K %s gso off gro off tso off 2>/dev/null", int_if);
-	system(cmd);
-	system("sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
+	// NEW ENTROPY DELAY IMMEDIATELY AFTER INTERNET/MAC RESTORATION
+	int post_mac_jitter = get_entropy_delay(15, 60);
+	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\\033[0m\n", post_mac_jitter);
+	sleep(post_mac_jitter);
 
-	printf("\033[1;36m[*] Permanently disabling IPv6 at Kernel and Sysctl layers...\033[0m\n");
-	system("echo 'net.ipv6.conf.all.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
-	"echo 'net.ipv6.conf.default.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
-	"echo 'net.ipv6.conf.lo.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
-	"sudo sysctl -p >/dev/null 2>&1");
+	// TEMPORARY FIREWALL HOLE SO COVER TRAFFIC CAN ESCAPE THE 'OUTPUT DROP'
+	system("iptables -I OUTPUT -p udp --dport 443 -j ACCEPT; iptables -I OUTPUT -p udp --dport 53 -j ACCEPT");
 
+	// CORE TRAFFIC COMPILES AND STARTS IMMEDIATELY
 	system("cp ./heartbeat.c /dev/shm/heartbeat.c 2>/dev/null; gcc /dev/shm/heartbeat.c -o /dev/shm/heartbeat 2>/dev/null; "
 	"gcc ./shadownet_engine.c -o /dev/shm/shadownet_engine 2>/dev/null");
 
@@ -206,6 +206,19 @@ void start_shadownet() {
 	stop_shadownet();
 	exit(1);
 		}
+
+		printf("\033[1;36m[*] Hardening Interface & System Persistence (Anti-Sleep)...\033[0m\n");
+		sprintf(cmd, "sudo iw dev %s set power_save off 2>/dev/null", int_if);
+		system(cmd);
+		sprintf(cmd, "sudo ethtool -K %s gso off gro off tso off 2>/dev/null", int_if);
+		system(cmd);
+		system("sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
+
+		printf("\033[1;36m[*] Permanently disabling IPv6 at Kernel and Sysctl layers...\033[0m\n");
+		system("echo 'net.ipv6.conf.all.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
+		"echo 'net.ipv6.conf.default.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
+		"echo 'net.ipv6.conf.lo.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
+		"sudo sysctl -p >/dev/null 2>&1");
 
 		printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at 5Mbit in RAM).\033[0m\n");
 		printf("\033[1;32m[+] Packet Size Assigned: %d bytes.\033[0m\n", fixed_mtu);
