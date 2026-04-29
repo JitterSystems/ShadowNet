@@ -174,7 +174,6 @@ void start_shadownet() {
 	sprintf(cmd, "sudo macchanger -r %s", int_if);
 	system(cmd);
 
-	// ANTI-FRAGMENTATION: Lockdown MTU and disable Path MTU Discovery at kernel level
 	sprintf(cmd, "sudo ip link set %s mtu %d", int_if, fixed_mtu);
 	system(cmd);
 	system("sudo sysctl -w net.ipv4.ip_no_pmtu_disc=1 >/dev/null");
@@ -249,7 +248,24 @@ void start_shadownet() {
 		"sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1");
 
 		system("sudo sed -i '/# --- ShadowNet Protocol Additions ---/,/# --- End ShadowNet ---/d' /etc/tor/torrc; "
-		"printf '\\n# --- ShadowNet Protocol Additions ---\\nVirtualAddrNetworkIPv4 10.192.0.0/10\\nAutomapHostsOnResolve 1\\nTransPort 127.0.0.1:9040\\nDNSPort 127.0.0.1:5353\\nLongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n# Enforce 6-Hop Circuitry\\nCircuitBuildTimeout 60\\nNumEntryGuards 3\\nEnforceDistinctSubnets 1\\nNewCircuitPeriod 1\\nMaxCircuitDirtiness 1\\n# --- End ShadowNet ---\\n' >> /etc/tor/torrc; "
+		"printf '\\n# --- ShadowNet Protocol Additions ---\\n"
+		"VirtualAddrNetworkIPv4 10.192.0.0/10\\n"
+		"AutomapHostsOnResolve 1\\n"
+		"TransPort 127.0.0.1:9040 IsolateDestAddr IsolateDestPort\\n"
+		"DNSPort 127.0.0.1:5353\\n"
+		"UseBridges 1\\n"
+		"ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy\\n"
+		"Bridge obfs4 178.196.137.6:995 E4BFB6D0104B39023047F0DBEC6968D342C663B7 cert=7XQJE7iuQybP8HkddKOz7Xj8XACzbwEXS1dITzCJeVA9khBS0C22vTZYtLjVv6AhEeinGg iat-mode=1\\n"
+		"Bridge obfs4 46.38.240.142:62831 85DDB88F43F5F233BEA75246A2D693388BC2608B cert=Gz6dmuUPb1eqduXeC/fzXEDZfioPqT4nzyUrDTpofOHYz6EVTBqy+E5Ts0x1RBZZZCthOw iat-mode=0\\n"
+		"LongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n"
+		"# Enforce 6-Hop Circuitry\\n"
+		"CircuitBuildTimeout 60\\n"
+		"NumEntryGuards 3\\n"
+		"EnforceDistinctSubnets 1\\n"
+		"NewCircuitPeriod 1\\n"
+		"MaxCircuitDirtiness 1\\n"
+		"# --- End ShadowNet ---\\n' >> /etc/tor/torrc; "
+		"sudo chown debian-tor:debian-tor /etc/tor/torrc; "
 		"systemctl restart tor@default; sleep 2");
 
 		sprintf(cmd, "sudo tc qdisc del dev %s root 2>/dev/null; "
@@ -300,7 +316,6 @@ void start_shadownet() {
 		"iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT");
 
 		/* ANTI-FRAGMENTATION DROP POLICY */
-		// Explicitly DROP any packet exceeding the whitelist MTU range before it can be fragmented
 		system("iptables -A OUTPUT -m length --length 1101:65535 -j DROP");
 
 		/* INTEGRATED STRICT NO-LOGS WHITELIST */
