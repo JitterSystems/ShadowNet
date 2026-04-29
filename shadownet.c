@@ -103,6 +103,7 @@ void stop_shadownet() {
 
 	system("sudo sysctl -w net.ipv4.ip_default_ttl=64 >/dev/null");
 	system("sudo sysctl -w net.ipv4.tcp_timestamps=1 >/dev/null");
+	system("sudo sysctl -w net.ipv4.ip_no_pmtu_disc=0 >/dev/null");
 
 	char cmd[512];
 	sprintf(cmd, "sudo tc qdisc del dev %s root 2>/dev/null", int_if);
@@ -172,20 +173,21 @@ void start_shadownet() {
 
 	sprintf(cmd, "sudo macchanger -r %s", int_if);
 	system(cmd);
+
+	// ANTI-FRAGMENTATION: Lockdown MTU and disable Path MTU Discovery at kernel level
 	sprintf(cmd, "sudo ip link set %s mtu %d", int_if, fixed_mtu);
 	system(cmd);
+	system("sudo sysctl -w net.ipv4.ip_no_pmtu_disc=1 >/dev/null");
+
 	sprintf(cmd, "sudo ip link set %s up", int_if);
 	system(cmd);
 
-	// NEW ENTROPY DELAY IMMEDIATELY AFTER INTERNET/MAC RESTORATION
 	int post_mac_jitter = get_entropy_delay(15, 60);
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\\033[0m\n", post_mac_jitter);
 	sleep(post_mac_jitter);
 
-	// TEMPORARY FIREWALL HOLE SO COVER TRAFFIC CAN ESCAPE THE 'OUTPUT DROP'
 	system("iptables -I OUTPUT -p udp --dport 443 -j ACCEPT; iptables -I OUTPUT -p udp --dport 53 -j ACCEPT");
 
-	// CORE TRAFFIC COMPILES AND STARTS IMMEDIATELY
 	system("cp ./heartbeat.c /dev/shm/heartbeat.c 2>/dev/null; gcc /dev/shm/heartbeat.c -o /dev/shm/heartbeat 2>/dev/null; "
 	"gcc ./shadownet_engine.c -o /dev/shm/shadownet_engine 2>/dev/null");
 
@@ -274,7 +276,12 @@ void start_shadownet() {
 		system("echo 'nameserver 127.0.0.1' > /etc/resolv.conf");
 
 		system("iptables -F; iptables -t nat -F; iptables -t mangle -F; iptables -X");
-		system("iptables -P OUTPUT ACCEPT; iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT");
+
+		/* STRICT LOCKDOWN POLICY */
+		system("iptables -P INPUT DROP; iptables -P FORWARD DROP; iptables -P OUTPUT DROP");
+		system("iptables -A OUTPUT -o lo -j ACCEPT; iptables -A INPUT -i lo -j ACCEPT");
+		system("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
+		system("iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
 
 		system("iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 860");
 
@@ -289,14 +296,22 @@ void start_shadownet() {
 		"iptables -A OUTPUT -p tcp --dport 53 ! -d 127.0.0.1 -j DROP; "
 		"iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN; "
 		"iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports 9040; "
-		"iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT; "
-		"iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT; "
-		"iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT");
+		"iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT; "
+		"iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT");
 
-		const char *dns_list[] = {"76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11", "84.200.69.80", "84.200.70.40"};
-		for(int i = 0; i < 6; i++) {
-			sprintf(cmd, "iptables -t mangle -A OUTPUT -d %s -j MARK --set-mark 5; "
-			"iptables -A OUTPUT -p udp -d %s -j ACCEPT", dns_list[i], dns_list[i]);
+		/* ANTI-FRAGMENTATION DROP POLICY */
+		// Explicitly DROP any packet exceeding the whitelist MTU range before it can be fragmented
+		system("iptables -A OUTPUT -m length --length 1101:65535 -j DROP");
+
+		/* INTEGRATED STRICT NO-LOGS WHITELIST */
+		const char *dns_list[] = {
+			"76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11",
+			"84.200.69.80", "84.200.70.40", "194.242.2.2", "194.242.2.3",
+			"194.242.2.4", "91.239.100.100", "89.233.43.71", "116.202.176.26"
+		};
+		for(int i = 0; i < 12; i++) {
+			sprintf(cmd, "iptables -t mangle -I OUTPUT -d %s -j MARK --set-mark 5; "
+			"iptables -I OUTPUT -p udp -d %s -j ACCEPT", dns_list[i], dns_list[i]);
 			system(cmd);
 		}
 
