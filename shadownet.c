@@ -4,6 +4,18 @@
 #include <unistd.h>
 #include <sys/types.h>
 #include <signal.h>
+#include <ctype.h>
+
+// Security Shield: Validates interface name to prevent command injection
+void validate_iface(const char *iface) {
+	if (strlen(iface) == 0) exit(1);
+	for (int i = 0; iface[i] != '\0'; i++) {
+		if (!isalnum(iface[i]) && iface[i] != '.') {
+			printf("\033[0;31m[!] Security Violation: Malicious interface detected.\033[0m\n");
+			exit(1);
+		}
+	}
+}
 
 void get_interface(char *iface) {
 	FILE *fp = popen("ip route | grep default | awk '{print $5}' | head -n1", "r");
@@ -19,6 +31,7 @@ void get_interface(char *iface) {
 	iface[strcspn(iface, "\n")] = 0;
 	iface[strcspn(iface, " ")] = 0;
 	pclose(fp);
+	validate_iface(iface);
 }
 
 int get_entropy_delay(int min, int max) {
@@ -182,7 +195,7 @@ void start_shadownet() {
 	system(cmd);
 
 	int post_mac_jitter = get_entropy_delay(15, 60);
-	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\\033[0m\n", post_mac_jitter);
+	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\033[0m\n", post_mac_jitter);
 	sleep(post_mac_jitter);
 
 	system("iptables -I OUTPUT -p udp --dport 443 -j ACCEPT; iptables -I OUTPUT -p udp --dport 53 -j ACCEPT");
@@ -272,7 +285,6 @@ void start_shadownet() {
 		"sudo chown debian-tor:debian-tor /etc/tor/torrc; "
 		"systemctl restart tor@default; sleep 2");
 
-		/* FIXED: PURGE OLD QDISC BEFORE REDEFINING */
 		int mix_jitter = get_entropy_delay(30, 70);
 		int reorder_agg = get_entropy_delay(25, 45);
 		int sfq_pert = get_entropy_delay(1, 2);
@@ -281,6 +293,7 @@ void start_shadownet() {
 		system(cmd);
 		usleep(get_entropy_delay(200000, 600000));
 
+		// ENHANCED TC STACK: Added loss and corruption noise to shatter traffic analysis patterns
 		sprintf(cmd, "sudo tc qdisc add dev %s root handle 1: htb default 10; "
 		"sudo tc class add dev %s parent 1: classid 1:1 htb rate 5mbit ceil 5mbit; "
 		"sudo tc class add dev %s parent 1:1 classid 1:5 htb rate 4mbit ceil 5mbit prio 0; "
@@ -291,12 +304,12 @@ void start_shadownet() {
 
 		usleep(get_entropy_delay(150000, 400000));
 
-		/* Triple-Tiered Jitter/Shuffle Stack */
-		sprintf(cmd, "sudo tc qdisc add dev %s parent 1:5 handle 5: netem delay %dms %dms distribution pareto reorder %d%% 50%%; "
-		"sudo tc qdisc add dev %s parent 5: handle 55: netem delay %dms %dms distribution pareto reorder %d%% 50%%; "
-		"sudo tc qdisc add dev %s parent 55: handle 50: sfq perturb %d quantum 1514b limit 128; "
+		/* Triple-Tiered Jitter/Shuffle Stack with enhanced reordering aggression */
+		sprintf(cmd, "sudo tc qdisc add dev %s parent 1:5 handle 5: netem delay %dms %dms distribution pareto reorder %d%% 50%% loss 0.1%%; "
+		"sudo tc qdisc add dev %s parent 5: handle 55: netem delay %dms %dms distribution pareto reorder %d%% 50%% corrupt 0.1%%; "
+		"sudo tc qdisc add dev %s parent 55: handle 50: sfq perturb %d quantum 1514b limit 256; "
 		"sudo tc qdisc add dev %s parent 1:10 handle 10: netem delay %dms %dms distribution pareto; "
-		"sudo tc qdisc add dev %s parent 10: handle 100: sfq perturb %d quantum 1514b limit 128",
+		"sudo tc qdisc add dev %s parent 10: handle 100: sfq perturb %d quantum 1514b limit 256",
 		int_if, mix_jitter, mix_jitter/5, reorder_agg, int_if, mix_jitter/2, mix_jitter/10, reorder_agg/2,
 		int_if, sfq_pert, int_if, mix_jitter*4, mix_jitter, int_if, sfq_pert);
 		system(cmd);
@@ -313,7 +326,6 @@ void start_shadownet() {
 
 		system("iptables -F; iptables -t nat -F; iptables -t mangle -F; iptables -X");
 
-		/* STRICT LOCKDOWN POLICY */
 		system("iptables -P INPUT DROP; iptables -P FORWARD DROP; iptables -P OUTPUT DROP");
 		system("iptables -A OUTPUT -o lo -j ACCEPT; iptables -A INPUT -i lo -j ACCEPT");
 		system("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
@@ -335,10 +347,8 @@ void start_shadownet() {
 		"iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT; "
 		"iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT");
 
-		/* ANTI-FRAGMENTATION DROP POLICY */
 		system("iptables -A OUTPUT -m length --length 1101:65535 -j DROP");
 
-		/* INTEGRATED STRICT NO-LOGS WHITELIST */
 		const char *dns_list[] = {
 			"76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11",
 			"84.200.69.80", "84.200.70.40", "194.242.2.2", "194.242.2.3",
