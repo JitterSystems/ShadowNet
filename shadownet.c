@@ -251,7 +251,7 @@ void start_shadownet() {
 		"printf '\\n# --- ShadowNet Protocol Additions ---\\n"
 		"VirtualAddrNetworkIPv4 10.192.0.0/10\\n"
 		"AutomapHostsOnResolve 1\\n"
-		"TransPort 127.0.0.1:9040 IsolateDestAddr IsolateDestPort\\n"
+		"TransPort 127.0.0.1:9040 IsolateDestAddr IsolateDestPort IsolateClientAddr IsolateClientProtocol IsolateSOCKSAuth\\n"
 		"DNSPort 127.0.0.1:5353\\n"
 		"UseBridges 1\\n"
 		"ClientTransportPlugin obfs4 exec /usr/bin/obfs4proxy\\n"
@@ -264,12 +264,24 @@ void start_shadownet() {
 		"EnforceDistinctSubnets 1\\n"
 		"NewCircuitPeriod 1\\n"
 		"MaxCircuitDirtiness 1\\n"
+		"CircuitPadding 1\\n"
+		"ConnectionPadding 1\\n"
+		"ReducedConnectionPadding 0\\n"
+		"ReducedCircuitPadding 0\\n"
 		"# --- End ShadowNet ---\\n' >> /etc/tor/torrc; "
 		"sudo chown debian-tor:debian-tor /etc/tor/torrc; "
 		"systemctl restart tor@default; sleep 2");
 
-		sprintf(cmd, "sudo tc qdisc del dev %s root 2>/dev/null; "
-		"sudo tc qdisc add dev %s root handle 1: htb default 10; "
+		/* FIXED: PURGE OLD QDISC BEFORE REDEFINING */
+		int mix_jitter = get_entropy_delay(30, 70);
+		int reorder_agg = get_entropy_delay(25, 45);
+		int sfq_pert = get_entropy_delay(1, 2);
+
+		sprintf(cmd, "sudo tc qdisc del dev %s root 2>/dev/null", int_if);
+		system(cmd);
+		usleep(get_entropy_delay(200000, 600000));
+
+		sprintf(cmd, "sudo tc qdisc add dev %s root handle 1: htb default 10; "
 		"sudo tc class add dev %s parent 1: classid 1:1 htb rate 5mbit ceil 5mbit; "
 		"sudo tc class add dev %s parent 1:1 classid 1:5 htb rate 4mbit ceil 5mbit prio 0; "
 		"sudo tc class add dev %s parent 1:1 classid 1:10 htb rate 1mbit ceil 5mbit prio 7; "
@@ -277,11 +289,19 @@ void start_shadownet() {
 		int_if, int_if, int_if, int_if, int_if, int_if);
 		system(cmd);
 
-		int sfq_jitter = get_entropy_delay(5, 30);
-		sprintf(cmd, "sudo tc qdisc add dev %s parent 1:5 handle 50: sfq perturb %d; "
-		"sudo tc qdisc add dev %s parent 1:10 handle 100: sfq perturb %d",
-		int_if, sfq_jitter, int_if, sfq_jitter);
+		usleep(get_entropy_delay(150000, 400000));
+
+		/* Triple-Tiered Jitter/Shuffle Stack */
+		sprintf(cmd, "sudo tc qdisc add dev %s parent 1:5 handle 5: netem delay %dms %dms distribution pareto reorder %d%% 50%%; "
+		"sudo tc qdisc add dev %s parent 5: handle 55: netem delay %dms %dms distribution pareto reorder %d%% 50%%; "
+		"sudo tc qdisc add dev %s parent 55: handle 50: sfq perturb %d quantum 1514b limit 128; "
+		"sudo tc qdisc add dev %s parent 1:10 handle 10: netem delay %dms %dms distribution pareto; "
+		"sudo tc qdisc add dev %s parent 10: handle 100: sfq perturb %d quantum 1514b limit 128",
+		int_if, mix_jitter, mix_jitter/5, reorder_agg, int_if, mix_jitter/2, mix_jitter/10, reorder_agg/2,
+		int_if, sfq_pert, int_if, mix_jitter*4, mix_jitter, int_if, sfq_pert);
 		system(cmd);
+
+		usleep(get_entropy_delay(200000, 500000));
 
 		system("if [ -L /etc/resolv.conf ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; rm -f /etc/resolv.conf; "
 		"elif [ ! -f /dev/shm/resolv.conf.shadownet_bak ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; fi");
