@@ -115,7 +115,7 @@ void stop_shadownet() {
 
 	system("if [ -f /dev/shm/shadownet_mac.bak ]; then "
 	"RESTORE_JITTER=$(od -An -N1 -i /dev/urandom | awk '{print int(($1 * 8 / 255) + 2)}'); "
-	"echo -e \"\\033[1;33m[*] Applying Identity Entropy: ${RESTORE_JITTER}s before restoration...\\033[0m\"; "
+	"echo  \"\\033[1;33m[*] Applying Identity Entropy: ${RESTORE_JITTER}s before restoration...\\033[0m\"; "
 	"IFACE=$(ip route | grep default | awk '{print $5}' | head -n1); "
 	"sudo ip link set $IFACE down; sleep $RESTORE_JITTER; "
 	"sudo macchanger -m $(cat /dev/shm/shadownet_mac.bak) $IFACE; "
