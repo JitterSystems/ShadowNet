@@ -32,6 +32,7 @@ unsigned short csum(unsigned short *ptr, int nbytes) {
 double get_entropy_jitter() {
 	unsigned char rand_byte;
 	FILE *f = fopen("/dev/urandom", "rb");
+	if (!f) return 0.010;
 	fread(&rand_byte, 1, 1, f);
 	fclose(f);
 	return ((double)rand_byte / 255.0) * 0.040 + 0.010;
@@ -40,13 +41,13 @@ double get_entropy_jitter() {
 double get_dns_iat() {
 	unsigned int rand_val;
 	FILE *f = fopen("/dev/urandom", "rb");
+	if (!f) return 1.0;
 	fread(&rand_val, sizeof(rand_val), 1, f);
 	fclose(f);
 	return 0.5 + ((double)(rand_val % 2500) / 1000.0);
 }
 
 int main(int argc, char *argv[]) {
-	// This is the ceiling MTU from shadownet.c
 	int max_mtu = (argc > 1) ? atoi(argv[1]) : 1100;
 	const char *destinations[] = {"76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11", "84.200.69.80", "84.200.70.40"};
 	const char *fake_domains[] = {"google.com", "bing.com", "duckduckgo.com", "protonmail.com", "github.com"};
@@ -75,7 +76,6 @@ int main(int argc, char *argv[]) {
 		int dest_idx = rand() % num_dests;
 		sin.sin_addr.s_addr = inet_addr(destinations[dest_idx]);
 
-		// 1. DNS Entropy Logic
 		if(difftime(curr_time, last_dns_time) > get_dns_iat()) {
 			memset(packet, 0, 4096);
 			iph->ihl = 5; iph->version = 4; iph->tos = 0;
@@ -92,10 +92,9 @@ int main(int argc, char *argv[]) {
 			last_dns_time = curr_time;
 		}
 
-		// 2. Heartbeat with PER-PACKET JITTER Logic
+		// 2. Heartbeat with ENHANCED FLOW JITTER
 		int burst_size = 10 + (rand() % 13);
 		for(int b = 0; b < burst_size; b++) {
-			// Updated range ensures even at max jitter, we stay under the 1100 ceiling
 			int jittered_payload_size = (rand() % (1100 - 500 + 1)) + 500 - 42;
 			if (jittered_payload_size < 64) jittered_payload_size = 64;
 
@@ -114,7 +113,8 @@ int main(int argc, char *argv[]) {
 
 			struct timespec micro_req;
 			micro_req.tv_sec = 0;
-			micro_req.tv_nsec = (rand() % 30000);
+			// Enhanced: Using non-linear delay between individual packets in a burst
+			micro_req.tv_nsec = (rand() % 25000) + (rand() % 15000);
 			nanosleep(&micro_req, NULL);
 
 			sendto(sock, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
