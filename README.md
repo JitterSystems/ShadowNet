@@ -59,7 +59,7 @@ the fingerprinting link)
 
 The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-6. Constant Bit Rate (CBR) Shaping (100kbit-5mbit) (Cover Traffic)
+6. Constant Bit Rate (CBR) Shaping (100kbit-5mbit) (Cover Traffic) -> Sent through the Lokinet P2P Network
 
 ShadowNet maintains a disciplined 100kbit-5mbit pulse regardless of your actual activity.
 
