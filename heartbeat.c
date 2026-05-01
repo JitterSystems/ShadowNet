@@ -48,18 +48,29 @@ double get_dns_iat() {
 }
 
 int main(int argc, char *argv[]) {
-	int max_mtu = (argc > 1) ? atoi(argv[1]) : 1100;
-	const char *destinations[] = {"76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11", "84.200.69.80", "84.200.70.40"};
+	int max_mtu = (argc > 1) ? atoi(argv[1]) : 1400;
+
+	// We can now target generic exit nodes because the interface binding
+	// will forcefully push these packets through the lokitun0 tunnel.
+	const char *destinations[] = {"76.76.2.2", "84.200.69.80", "1.1.1.1", "9.9.9.9"};
 	const char *fake_domains[] = {"google.com", "bing.com", "duckduckgo.com", "protonmail.com", "github.com"};
-	int num_dests = 6;
+	int num_dests = 4;
 	int num_domains = 5;
 
 	srand(time(NULL));
 
 	int sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
 	if(sock < 0) exit(1);
+
 	int one = 1;
 	setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one));
+
+	// LOKINET BINDING FIX: Force this socket strictly through the lokitun0 interface
+	const char *device = "lokitun0";
+	if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, device, strlen(device)) < 0) {
+		printf("\033[0;31m[!] Error: Failed to bind heartbeat to lokitun0 interface.\033[0m\n");
+		exit(1);
+	}
 
 	char packet[4096];
 	struct iphdr *iph = (struct iphdr *) packet;
@@ -84,7 +95,8 @@ int main(int argc, char *argv[]) {
 			iph->protocol = IPPROTO_UDP; iph->daddr = sin.sin_addr.s_addr;
 			iph->check = csum((unsigned short *) packet, iph->tot_len);
 			udph->source = htons(49152 + (rand() % 16383));
-			udph->dest = htons(53); udph->len = htons(sizeof(struct udphdr) + 32);
+			udph->dest = htons(53); // DNS Query
+			udph->len = htons(sizeof(struct udphdr) + 32);
 			char *dns_data = packet + sizeof(struct iphdr) + sizeof(struct udphdr);
 			dns_data[0] = rand() % 255; dns_data[1] = rand() % 255; dns_data[2] = 0x01;
 			strcpy(dns_data + 12, fake_domains[rand() % num_domains]);
@@ -92,10 +104,9 @@ int main(int argc, char *argv[]) {
 			last_dns_time = curr_time;
 		}
 
-		// 2. Heartbeat with ENHANCED FLOW JITTER
 		int burst_size = 10 + (rand() % 13);
 		for(int b = 0; b < burst_size; b++) {
-			int jittered_payload_size = (rand() % (1100 - 500 + 1)) + 500 - 42;
+			int jittered_payload_size = (rand() % (1400 - 500 + 1)) + 500 - 42;
 			if (jittered_payload_size < 64) jittered_payload_size = 64;
 
 			memset(packet, 0, 4096);
@@ -113,7 +124,6 @@ int main(int argc, char *argv[]) {
 
 			struct timespec micro_req;
 			micro_req.tv_sec = 0;
-			// Enhanced: Using non-linear delay between individual packets in a burst
 			micro_req.tv_nsec = (rand() % 25000) + (rand() % 15000);
 			nanosleep(&micro_req, NULL);
 
