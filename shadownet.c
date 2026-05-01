@@ -6,7 +6,6 @@
 #include <signal.h>
 #include <ctype.h>
 
-// Security Shield: Validates interface name to prevent command injection
 void validate_iface(const char *iface) {
     if (strlen(iface) == 0) exit(1);
     for (int i = 0; iface[i] != '\0'; i++) {
@@ -23,13 +22,13 @@ void get_interface(char *iface) {
         printf("\033[0;31m[!] Error: Failed to execute ip route.\033[0m\n");
         exit(1);
     }
-    memset(iface, 0, 32); // Ensure buffer is clean
+    memset(iface, 0, 32);
     if (fgets(iface, 15, fp) == NULL) {
         printf("\033[0;31m[!] Error: No active network interface found.\033[0m\n");
         pclose(fp);
         exit(1);
     }
-    iface[strcspn(iface, "\n\r ")] = 0; // Strip all possible trailing whitespace
+    iface[strcspn(iface, "\n\r ")] = 0;
     pclose(fp);
     validate_iface(iface);
 }
@@ -81,6 +80,7 @@ void trigger_emergency_lockdown() {
     system("iptables -F; iptables -t nat -F; iptables -t mangle -F");
     execute_14_tier_sanitation("heartbeat");
     execute_14_tier_sanitation("shadownet_engine");
+    system("sudo systemctl stop lokinet tor");
     printf("\n\033[0;31m\a[!!!] SHADOWNET EMERGENCY LOCKDOWN ENGAGED. INTERNET PERMANENTLY KILLED.\033[0m\n");
     printf("\033[1;33m[*] Run 'sudo ./shadownet stop' manually to restore connectivity.\033[0m\n");
     exit(1);
@@ -105,6 +105,7 @@ void stop_shadownet() {
     printf("\033[1;31m[*] Finalizing teardown... Waiting %d seconds.\033[0m\n", wait_time);
     sleep(wait_time);
 
+    system("sudo systemctl stop lokinet 2>/dev/null");
     system("sudo systemctl unmask chrony ntp systemd-timesyncd 2>/dev/null");
     system("sudo systemctl start chrony ntp systemd-timesyncd 2>/dev/null");
 
@@ -157,7 +158,7 @@ void start_shadownet() {
         exit(1);
     }
 
-    int fixed_mtu = get_entropy_delay(900, 1100);
+    int fixed_mtu = 1400; // Adjusted for Lokinet compatibility
 
     printf("\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m\n");
     execute_14_tier_sanitation("heartbeat");
@@ -172,7 +173,12 @@ void start_shadownet() {
     }
 
     system("rm -f /dev/shm/shadownet_heartbeat.pid /dev/shm/shadownet_engine.pid /dev/shm/heartbeat /dev/shm/shadownet_engine");
+
+    // EARLY WHITELIST FIX: Drop ALL output but allow Lokinet to bootstrap immediately
     system("iptables -P OUTPUT DROP");
+    system("LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
+    "if [ -n \"$LOKI_UID\" ]; then iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; fi");
+    system("iptables -I INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
 
     snprintf(cmd, sizeof(cmd), "ip link show %.16s | grep ether | awk '{print $2}' > /dev/shm/shadownet_mac.bak", int_if);
     system(cmd);
@@ -186,6 +192,17 @@ void start_shadownet() {
 
     snprintf(cmd, sizeof(cmd), "sudo macchanger -r %.16s", int_if);
     system(cmd);
+
+    int post_mac_iat = get_entropy_delay(5, 10);
+    printf("\033[1;33m[*] Applying Identity Entropy: %ds before Lokinet Ignition...\033[0m\n", post_mac_iat);
+    sleep(post_mac_iat);
+
+    printf("\033[1;36m[*] Starting Lokinet Service (Exempted for Peer Discovery)...\033[0m\n");
+    system("sudo systemctl start lokinet");
+
+    int post_loki_iat = get_entropy_delay(15, 30);
+    printf("\033[1;33m[*] Applying Bootstrap Entropy: %ds allowing Lokinet to build paths...\033[0m\n", post_loki_iat);
+    sleep(post_loki_iat);
 
     snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s mtu %d", int_if, fixed_mtu);
     system(cmd);
@@ -293,7 +310,6 @@ void start_shadownet() {
         system(cmd);
         usleep(get_entropy_delay(200000, 600000));
 
-        // ENHANCED TC STACK: Added loss and corruption noise to shatter traffic analysis patterns
         snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s root handle 1: htb default 10; "
         "sudo tc class add dev %.16s parent 1: classid 1:1 htb rate 5mbit ceil 5mbit; "
         "sudo tc class add dev %.16s parent 1:1 classid 1:5 htb rate 4mbit ceil 5mbit prio 0; "
@@ -304,7 +320,6 @@ void start_shadownet() {
 
         usleep(get_entropy_delay(150000, 400000));
 
-        /* Triple-Tiered Jitter/Shuffle Stack with enhanced reordering aggression */
         snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s parent 1:5 handle 5: netem delay %dms %dms distribution pareto reorder %d%% 50%% loss 0.1%%; "
         "sudo tc qdisc add dev %.16s parent 5: handle 55: netem delay %dms %dms distribution pareto reorder %d%% 50%% corrupt 0.1%%; "
         "sudo tc qdisc add dev %.16s parent 55: handle 50: sfq perturb %d quantum 1514b limit 256; "
@@ -331,13 +346,20 @@ void start_shadownet() {
         system("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
         system("iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
 
-        system("iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 860");
+        system("iptables -t mangle -A OUTPUT -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --set-mss 1100");
 
         snprintf(cmd, sizeof(cmd), "iptables -t mangle -A OUTPUT -o %.16s -j TTL --ttl-set 128; "
         "iptables -t mangle -A POSTROUTING -o %.16s -j TTL --ttl-set 128", int_if, int_if);
         system(cmd);
 
+        // FINAL ROUTING FIX: Properly isolate Lokinet UID from Tor rules and grant full tunnel/external egress
         system("TOR_UID=$(id -u debian-tor); iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN; "
+        "LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
+        "if [ -n \"$LOKI_UID\" ]; then "
+        "  iptables -t nat -A OUTPUT -m owner --uid-owner $LOKI_UID -j RETURN; "
+        "  iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; "
+        "fi; "
+        "iptables -A OUTPUT -o lokitun0 -j ACCEPT; "
         "iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 5353; "
         "iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports 5353; "
         "iptables -A OUTPUT -p udp --dport 53 ! -d 127.0.0.1 -j DROP; "
@@ -347,30 +369,20 @@ void start_shadownet() {
         "iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT; "
         "iptables -A OUTPUT -m owner --uid-owner $TOR_UID -j ACCEPT");
 
-        system("iptables -A OUTPUT -m length --length 1101:65535 -j DROP");
-
-        const char *dns_list[] = {
-            "76.76.2.2", "76.76.10.2", "182.222.222.222", "45.11.45.11",
-            "84.200.69.80", "84.200.70.40", "194.242.2.2", "194.242.2.3",
-            "194.242.2.4", "91.239.100.100", "89.233.43.71", "116.202.176.26"
-        };
-        for(int i = 0; i < 12; i++) {
-            snprintf(cmd, sizeof(cmd), "iptables -t mangle -I OUTPUT -d %s -j MARK --set-mark 5; "
-            "iptables -I OUTPUT -p udp -d %s -j ACCEPT", dns_list[i], dns_list[i]);
-            system(cmd);
-        }
+        system("iptables -A OUTPUT -m length --length 1401:65535 -j DROP");
 
         system("iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable");
-        printf("\033[0;32m[!] ShadowNet Fully Active. Signal Erasure locked at 5Mbit.\033[0m\n");
+        printf("\033[0;32m[+] Lokinet & Tor Parallel Stack Active. Signal Erasure locked at 5Mbit.\033[0m\n");
 
-        printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Monitoring heartbeat, engine, tor, and shadownet...\033[0m\n");
+        printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Monitoring heartbeat, engine, tor, and lokinet...\033[0m\n");
         while(1) {
             if (system("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 ||
                 system("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 ||
                 system("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0 ||
-                system("ps -ef | grep './shadownet start' | grep -v grep > /dev/null") != 0) {
+                system("systemctl is-active --quiet lokinet") != 0) {
                 trigger_emergency_lockdown();
                 }
+                sleep(1);
         }
 }
 
