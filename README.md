@@ -1,6 +1,6 @@
 Big Thanks to Jesus for making this gain attention! Turn to Jesus before it's too late. :) He loves You
 
-🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Mixnet Techniques)
+🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Lokinet + Mixnet Techniques)
 
 No longer rely on blending in a crowd to be anonymous like regular tor, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
 
@@ -24,6 +24,10 @@ Asynchronous Obfuscation Layer:
 
 ShadowNet is an advanced network hardening framework that transforms a standard workstation into a "Private Mixnet of One." By forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform tunnel, it eliminates the behavioral metadata that state-level adversaries use to deanonymize users.
 🛡️ Core Evolutionary Features
+
+ShadowNet forces all system-wide traffic through Tor while utilizing Lokinet as the cover traffic and implementing Mixnet-like techniques.
+
+
 1. Asynchronous Message Queuing (SFQ)/Jitter Randomized delay/reordering and shuffling
 
 ShadowNet replaces standard linear packet release with Stochastic Fairness Queuing.
