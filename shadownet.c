@@ -158,7 +158,7 @@ void start_shadownet() {
         exit(1);
     }
 
-    int fixed_mtu = 1400; // Adjusted for Lokinet compatibility
+    int fixed_mtu = 1400;
 
     printf("\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m\n");
     execute_14_tier_sanitation("heartbeat");
@@ -173,11 +173,10 @@ void start_shadownet() {
     }
 
     system("rm -f /dev/shm/shadownet_heartbeat.pid /dev/shm/shadownet_engine.pid /dev/shm/heartbeat /dev/shm/shadownet_engine");
-
-    // EARLY WHITELIST FIX: Drop ALL output but allow Lokinet to bootstrap immediately
+    
     system("iptables -P OUTPUT DROP");
     system("LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
-    "if [ -n \"$LOKI_UID\" ]; then iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; fi");
+           "if [ -n \"$LOKI_UID\" ]; then iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; fi");
     system("iptables -I INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
 
     snprintf(cmd, sizeof(cmd), "ip link show %.16s | grep ether | awk '{print $2}' > /dev/shm/shadownet_mac.bak", int_if);
@@ -196,6 +195,10 @@ void start_shadownet() {
     int post_mac_iat = get_entropy_delay(5, 10);
     printf("\033[1;33m[*] Applying Identity Entropy: %ds before Lokinet Ignition...\033[0m\n", post_mac_iat);
     sleep(post_mac_iat);
+
+    // INJECT LOKINET CONFIG OVERRIDE
+    printf("\033[1;36m[*] Overriding Lokinet Configuration...\033[0m\n");
+    system("printf '[network]\\nenabled=true\\n\\n[dns]\\n\\n\\n[router]\\n' | sudo tee /var/lib/lokinet/lokinet.ini > /dev/null");
 
     printf("\033[1;36m[*] Starting Lokinet Service (Exempted for Peer Discovery)...\033[0m\n");
     system("sudo systemctl start lokinet");
@@ -352,9 +355,7 @@ void start_shadownet() {
         "iptables -t mangle -A POSTROUTING -o %.16s -j TTL --ttl-set 128", int_if, int_if);
         system(cmd);
 
-        // FINAL ROUTING FIX: Properly isolate Lokinet UID from Tor rules and grant full tunnel/external egress
         system("TOR_UID=$(id -u debian-tor); iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN; "
-        "LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
         "if [ -n \"$LOKI_UID\" ]; then "
         "  iptables -t nat -A OUTPUT -m owner --uid-owner $LOKI_UID -j RETURN; "
         "  iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; "
@@ -382,7 +383,7 @@ void start_shadownet() {
                 system("systemctl is-active --quiet lokinet") != 0) {
                 trigger_emergency_lockdown();
                 }
-                sleep(1);
+            sleep(1);
         }
 }
 
