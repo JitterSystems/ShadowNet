@@ -63,7 +63,7 @@ void execute_14_tier_sanitation(const char *name) {
             "ENV_PIDS=$(grep -l 'SHADOWNET_PROC=true' /proc/[0-9]*/environ 2>/dev/null | cut -d/ -f3); for e_pid in $ENV_PIDS; do sudo kill -9 $e_pid 2>/dev/null; done; "
             "ORPHAN_PIDS=$(ps -ef | awk '$3 == 1' | grep '%1$s' | grep -v grep | awk '{print $2}'); for o_pid in $ORPHAN_PIDS; do sudo kill -9 $o_pid 2>/dev/null; done; "
             "MAP_PIDS=$(sudo grep -l '%1$s' /proc/[0-9]*/maps 2>/dev/null | cut -d/ -f3); for mp_pid in $MAP_PIDS; do sudo kill -9 $mp_pid 2>/dev/null; done; "
-            "NICE_PIDS=$(ps -eo pid,ni,cmd | awk '$2 == -20' | grep '%1$s' | grep -v grep | awk '{print $1}'); for n_pid in $NICE_PIDS; do sudo kill -9 $n_pid 2>/dev/null; done; "
+            "NICE_PIDS=$(ps -eo pid,ni,cmd | awk '$2 == -20' | grep '%1$s' | grep -v grep | awk '$1 != \"\"' | awk '{print $1}'); for n_pid in $NICE_PIDS; do sudo kill -9 $n_pid 2>/dev/null; done; "
             "CMD_PIDS=$(grep -a -l '%1$s' /proc/[0-9]*/cmdline 2>/dev/null | cut -d/ -f3); for c_pid in $CMD_PIDS; do sudo kill -9 $c_pid 2>/dev/null; done; "
             "FD_PIDS=$(sudo find /proc/[0-9]* /fd -type l -lname '*%1$s*' 2>/dev/null | cut -d/ -f3 | sort -u); for fd_pid in $FD_PIDS; do sudo kill -9 $fd_pid 2>/dev/null; done; "
             "STAT_PIDS=$(awk -v name=\"%2$s\" '$2 == \"(\"name\")\" {print $1}' /proc/[0-9]*/stat 2>/dev/null); for st_pid in $STAT_PIDS; do sudo kill -9 $st_pid 2>/dev/null; done;",
@@ -173,10 +173,10 @@ void start_shadownet() {
     }
 
     system("rm -f /dev/shm/shadownet_heartbeat.pid /dev/shm/shadownet_engine.pid /dev/shm/heartbeat /dev/shm/shadownet_engine");
-    
+
     system("iptables -P OUTPUT DROP");
     system("LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
-           "if [ -n \"$LOKI_UID\" ]; then iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; fi");
+    "if [ -n \"$LOKI_UID\" ]; then iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; fi");
     system("iptables -I INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
 
     snprintf(cmd, sizeof(cmd), "ip link show %.16s | grep ether | awk '{print $2}' > /dev/shm/shadownet_mac.bak", int_if);
@@ -196,9 +196,8 @@ void start_shadownet() {
     printf("\033[1;33m[*] Applying Identity Entropy: %ds before Lokinet Ignition...\033[0m\n", post_mac_iat);
     sleep(post_mac_iat);
 
-    // INJECT LOKINET CONFIG OVERRIDE
     printf("\033[1;36m[*] Overriding Lokinet Configuration...\033[0m\n");
-    system("printf '[network]\\nenabled=true\\n\\n[dns]\\n\\n\\n[router]\\n' | sudo tee /var/lib/lokinet/lokinet.ini > /dev/null");
+    system("printf '[network]\\nexit-node=exit.loki\\nenabled=true\\n\\n[dns]\\n\\n\\n[router]\\n' | sudo tee /var/lib/lokinet/lokinet.ini > /dev/null");
 
     printf("\033[1;36m[*] Starting Lokinet Service (Exempted for Peer Discovery)...\033[0m\n");
     system("sudo systemctl start lokinet");
@@ -305,34 +304,19 @@ void start_shadownet() {
         "sudo chown debian-tor:debian-tor /etc/tor/torrc; "
         "systemctl restart tor@default; sleep 2");
 
-        int mix_jitter = get_entropy_delay(30, 70);
-        int reorder_agg = get_entropy_delay(25, 45);
-        int sfq_pert = get_entropy_delay(1, 2);
-
+        // TC HARDENING: Removing netem Pareto distribution to force a constant 5Mbit.
         snprintf(cmd, sizeof(cmd), "sudo tc qdisc del dev %.16s root 2>/dev/null", int_if);
         system(cmd);
-        usleep(get_entropy_delay(200000, 600000));
+        usleep(200000);
 
         snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s root handle 1: htb default 10; "
         "sudo tc class add dev %.16s parent 1: classid 1:1 htb rate 5mbit ceil 5mbit; "
-        "sudo tc class add dev %.16s parent 1:1 classid 1:5 htb rate 4mbit ceil 5mbit prio 0; "
-        "sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate 1mbit ceil 5mbit prio 7; "
-        "sudo tc filter add dev %.16s protocol ip parent 1:0 prio 1 handle 5 fw flowid 1:5",
-        int_if, int_if, int_if, int_if, int_if);
+        "sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate 5mbit ceil 5mbit burst 15k cburst 15k; "
+        "sudo tc qdisc add dev %.16s parent 1:10 handle 10: tbf rate 5mbit burst 32k limit 64k",
+        int_if, int_if, int_if, int_if);
         system(cmd);
 
-        usleep(get_entropy_delay(150000, 400000));
-
-        snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s parent 1:5 handle 5: netem delay %dms %dms distribution pareto reorder %d%% 50%% loss 0.1%%; "
-        "sudo tc qdisc add dev %.16s parent 5: handle 55: netem delay %dms %dms distribution pareto reorder %d%% 50%% corrupt 0.1%%; "
-        "sudo tc qdisc add dev %.16s parent 55: handle 50: sfq perturb %d quantum 1514b limit 256; "
-        "sudo tc qdisc add dev %.16s parent 1:10 handle 10: netem delay %dms %dms distribution pareto; "
-        "sudo tc qdisc add dev %.16s parent 10: handle 100: sfq perturb %d quantum 1514b limit 256",
-        int_if, mix_jitter, mix_jitter/5, reorder_agg, int_if, mix_jitter/2, mix_jitter/10, reorder_agg/2,
-        int_if, sfq_pert, int_if, mix_jitter*4, mix_jitter, int_if, sfq_pert);
-        system(cmd);
-
-        usleep(get_entropy_delay(200000, 500000));
+        usleep(200000);
 
         system("if [ -L /etc/resolv.conf ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; rm -f /etc/resolv.conf; "
         "elif [ ! -f /dev/shm/resolv.conf.shadownet_bak ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; fi");
@@ -356,6 +340,7 @@ void start_shadownet() {
         system(cmd);
 
         system("TOR_UID=$(id -u debian-tor); iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN; "
+        "LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
         "if [ -n \"$LOKI_UID\" ]; then "
         "  iptables -t nat -A OUTPUT -m owner --uid-owner $LOKI_UID -j RETURN; "
         "  iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; "
@@ -377,12 +362,19 @@ void start_shadownet() {
 
         printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Monitoring heartbeat, engine, tor, and lokinet...\033[0m\n");
         while(1) {
-            if (system("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 ||
-                system("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 ||
-                system("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0 ||
-                system("systemctl is-active --quiet lokinet") != 0) {
+            char traffic_check_cmd[512];
+            int proc_missing = (system("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 ||
+            system("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 ||
+            system("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0 ||
+            system("systemctl is-active --quiet lokinet") != 0);
+
+            snprintf(traffic_check_cmd, sizeof(traffic_check_cmd), "ip link show %s | grep -q 'UP'", int_if);
+            int phys_dead = (system(traffic_check_cmd) != 0);
+            int tun_dead = (system("ip link show lokitun0 > /dev/null 2>&1") != 0);
+
+            if (proc_missing || phys_dead || tun_dead) {
                 trigger_emergency_lockdown();
-                }
+            }
             sleep(1);
         }
 }
