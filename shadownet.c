@@ -247,6 +247,11 @@ void start_shadownet() {
         system(cmd);
         system("sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
 
+        // RF Obfuscation / Transmit Power Randomization
+        int tx_power = get_entropy_delay(8, 20); // Randomize TX power between 8dBm and 20dBm
+        snprintf(cmd, sizeof(cmd), "sudo iw dev %.16s set txpower limit %d00 2>/dev/null", int_if, tx_power);
+        system(cmd);
+
         printf("\033[1;36m[*] Permanently disabling IPv6 at Kernel and Sysctl layers...\033[0m\n");
         system("echo 'net.ipv6.conf.all.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
         "echo 'net.ipv6.conf.default.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
@@ -304,16 +309,17 @@ void start_shadownet() {
         "sudo chown debian-tor:debian-tor /etc/tor/torrc; "
         "systemctl restart tor@default; sleep 2");
 
-        // TC HARDENING: Removing netem Pareto distribution to force a constant 5Mbit.
         snprintf(cmd, sizeof(cmd), "sudo tc qdisc del dev %.16s root 2>/dev/null", int_if);
         system(cmd);
         usleep(200000);
 
+        // ENHANCED: 100% reordering ceiling and 1sec perturb to maximize temporal entropy
         snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s root handle 1: htb default 10; "
         "sudo tc class add dev %.16s parent 1: classid 1:1 htb rate 5mbit ceil 5mbit; "
         "sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate 5mbit ceil 5mbit burst 15k cburst 15k; "
-        "sudo tc qdisc add dev %.16s parent 1:10 handle 10: tbf rate 5mbit burst 32k limit 64k",
-        int_if, int_if, int_if, int_if);
+        "sudo tc qdisc add dev %.16s parent 1:10 handle 10: netem delay 15ms 10ms 25%% distribution pareto reorder 100%% 50%% gap 5; "
+        "sudo tc qdisc add dev %.16s parent 10:1 handle 20: sfq perturb 1 quantum 1514",
+        int_if, int_if, int_if, int_if, int_if);
         system(cmd);
 
         usleep(200000);
@@ -360,9 +366,19 @@ void start_shadownet() {
         system("iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable");
         printf("\033[0;32m[+] Lokinet & Tor Parallel Stack Active. Signal Erasure locked at 5Mbit.\033[0m\n");
 
-        printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Monitoring heartbeat, engine, tor, and lokinet...\033[0m\n");
+        printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Realistic 100ms Guarding Active...\033[0m\n");
+
+        unsigned long long last_loki_bytes = 0;
+        unsigned long long last_phys_bytes = 0;
+        unsigned long long packet_debt = 0;
+        int strike_count = 0;
+
         while(1) {
             char traffic_check_cmd[512];
+            unsigned long long curr_loki_bytes = 0;
+            unsigned long long curr_phys_bytes = 0;
+
+            // 1. Process Integrity Verification
             int proc_missing = (system("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 ||
             system("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 ||
             system("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0 ||
@@ -372,10 +388,55 @@ void start_shadownet() {
             int phys_dead = (system(traffic_check_cmd) != 0);
             int tun_dead = (system("ip link show lokitun0 > /dev/null 2>&1") != 0);
 
-            if (proc_missing || phys_dead || tun_dead) {
+            // 2. High-Resolution Throughput Sampling
+            FILE *f_loki = fopen("/sys/class/net/lokitun0/statistics/tx_bytes", "r");
+            if (f_loki) { fscanf(f_loki, "%llu", &curr_loki_bytes); fclose(f_loki); }
+
+            char phys_path[256];
+            snprintf(phys_path, sizeof(phys_path), "/sys/class/net/%s/statistics/tx_bytes", int_if);
+            FILE *f_phys = fopen(phys_path, "r");
+            if (f_phys) { fscanf(f_phys, "%llu", &curr_phys_bytes); fclose(f_phys); }
+
+            // 3. Queue Drainage Enforcement (1ms slice)
+            int traffic_desync = 0;
+            if (last_loki_bytes > 0) {
+                unsigned long long loki_gain = (curr_loki_bytes > last_loki_bytes) ? (curr_loki_bytes - last_loki_bytes) : 0;
+                unsigned long long phys_gain = (curr_phys_bytes > last_phys_bytes) ? (curr_phys_bytes - last_phys_bytes) : 0;
+
+                // Add any newly pushed tunnel data to the "debt" queue
+                packet_debt += loki_gain;
+
+                // Pay off the debt with data that actually left the physical hardware
+                if (phys_gain >= packet_debt) {
+                    packet_debt = 0;
+                } else {
+                    packet_debt -= phys_gain;
+                }
+
+                // Check if the physical hardware is stalled
+                if (packet_debt > 0) {
+                    if (phys_gain == 0) {
+                        strike_count++; // Hardware is dead silent while holding debt
+                    } else {
+                        strike_count = 0; // Hardware pushed a batch. Reset strikes instantly.
+                    }
+                } else {
+                    strike_count = 0; // Fully synced, no debt
+                }
+
+                // Lockdown occurs strictly after 100 continuous strikes (100ms of stalled hardware)
+                if (strike_count >= 100) {
+                    traffic_desync = 1;
+                }
+            }
+
+            last_loki_bytes = curr_loki_bytes;
+            last_phys_bytes = curr_phys_bytes;
+
+            if (proc_missing || phys_dead || tun_dead || traffic_desync) {
                 trigger_emergency_lockdown();
             }
-            sleep(1);
+            usleep(1000); // 1ms polling
         }
 }
 
