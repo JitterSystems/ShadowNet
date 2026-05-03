@@ -159,6 +159,7 @@ void start_shadownet() {
     }
 
     int fixed_mtu = 1400;
+    int target_mbit = get_entropy_delay(5, 20);
 
     printf("\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m\n");
     execute_14_tier_sanitation("heartbeat");
@@ -229,7 +230,7 @@ void start_shadownet() {
 
     setenv("SHADOWNET_PROC", "true", 1);
     system("sudo nice -n -20 nohup /dev/shm/shadownet_engine 76.76.2.2 5000 > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_engine.pid");
-    snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu);
+    snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_mbit);
     system(cmd);
 
     sleep(2);
@@ -258,8 +259,8 @@ void start_shadownet() {
         "echo 'net.ipv6.conf.lo.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
         "sudo sysctl -p >/dev/null 2>&1");
 
-        printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at 5Mbit in RAM).\033[0m\n");
-        printf("\033[1;32m[+] Packet Size Assigned: %d bytes.\033[0m\n", fixed_mtu);
+        printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at %dMbit in RAM).\033[0m\n", target_mbit);
+        printf("\033[1;32m[+] Packet Size Assigned: %d bytes | Target Rate: %d Mbit.\033[0m\n", fixed_mtu, target_mbit);
 
         int pre_phase1_jitter = get_entropy_delay(5, 45);
         printf("\033[1;33m[*] Applying Entropy IAT: %ds before Tier 1 access...\033[0m\n", pre_phase1_jitter);
@@ -315,11 +316,11 @@ void start_shadownet() {
 
         // ENHANCED: 100% reordering ceiling and 1sec perturb to maximize temporal entropy
         snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s root handle 1: htb default 10; "
-        "sudo tc class add dev %.16s parent 1: classid 1:1 htb rate 5mbit ceil 5mbit; "
-        "sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate 5mbit ceil 5mbit burst 15k cburst 15k; "
+        "sudo tc class add dev %.16s parent 1: classid 1:1 htb rate %dmbit ceil %dmbit; "
+        "sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate %dmbit ceil %dmbit burst 15k cburst 15k; "
         "sudo tc qdisc add dev %.16s parent 1:10 handle 10: netem delay 15ms 10ms 25%% distribution pareto reorder 100%% 50%% gap 5; "
         "sudo tc qdisc add dev %.16s parent 10:1 handle 20: sfq perturb 1 quantum 1514",
-        int_if, int_if, int_if, int_if, int_if);
+        int_if, int_if, target_mbit, target_mbit, int_if, target_mbit, target_mbit, int_if, int_if);
         system(cmd);
 
         usleep(200000);
@@ -364,7 +365,7 @@ void start_shadownet() {
         system("iptables -A OUTPUT -m length --length 1401:65535 -j DROP");
 
         system("iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable");
-        printf("\033[0;32m[+] Lokinet & Tor Parallel Stack Active. Signal Erasure locked at 5Mbit.\033[0m\n");
+        printf("\033[0;32m[+] Lokinet & Tor Parallel Stack Active. Signal Erasure locked at %dMbit.\033[0m\n", target_mbit);
 
         printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Realistic 100ms Guarding Active...\033[0m\n");
 
