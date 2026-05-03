@@ -49,6 +49,7 @@ double get_dns_iat() {
 
 int main(int argc, char *argv[]) {
 	int max_mtu = (argc > 1) ? atoi(argv[1]) : 1400;
+	int target_mbit = (argc > 2) ? atoi(argv[2]) : (5 + (rand() % 16));
 
 	// We can now target generic exit nodes because the interface binding
 	// will forcefully push these packets through the lokitun0 tunnel.
@@ -105,8 +106,10 @@ int main(int argc, char *argv[]) {
 		}
 
 		int burst_size = 10 + (rand() % 13);
+		int total_burst_bytes = 0;
+
 		for(int b = 0; b < burst_size; b++) {
-			int jittered_payload_size = (rand() % (1400 - 500 + 1)) + 500 - 42;
+			int jittered_payload_size = (rand() % (max_mtu - 500 + 1)) + 500 - 42;
 			if (jittered_payload_size < 64) jittered_payload_size = 64;
 
 			memset(packet, 0, 4096);
@@ -122,6 +125,8 @@ int main(int argc, char *argv[]) {
 			udph->len = htons(sizeof(struct udphdr) + jittered_payload_size);
 			udph->check = 0;
 
+			total_burst_bytes += iph->tot_len;
+
 			struct timespec micro_req;
 			micro_req.tv_sec = 0;
 			micro_req.tv_nsec = (rand() % 25000) + (rand() % 15000);
@@ -130,9 +135,12 @@ int main(int argc, char *argv[]) {
 			sendto(sock, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
 		}
 
-		double jitter = get_entropy_jitter();
-		req.tv_sec = 0;
-		req.tv_nsec = (long)(jitter * 1000000000.0);
+		// Calculate precise timing delay required to maintain the target bitrate
+		double required_time = (double)total_burst_bytes / (target_mbit * 125000.0);
+		double jitter = required_time * (0.95 + ((double)(rand() % 10) / 100.0)); // Introduce +/- 5% variance around the target pace
+
+		req.tv_sec = (long)jitter;
+		req.tv_nsec = (long)((jitter - req.tv_sec) * 1000000000.0);
 		nanosleep(&req, &rem);
 	}
 	return 0;
