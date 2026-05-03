@@ -59,11 +59,11 @@ the fingerprinting link)
 
 The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-6. Constant Bit Rate (CBR) Shaping (100kbit-5mbit) (Cover Traffic) -> Sent through the Lokinet P2P Network
+6. Randomized Constant Bit Rate (CBR) Shaping (5-20mbit) (Cover Traffic) -> Sent through the Lokinet P2P Network per session
 
-ShadowNet maintains a disciplined 100kbit-5mbit pulse regardless of your actual activity.
+ShadowNet maintains a disciplined 5-20mbit pulse regardless of your actual activity. You are assigned a fixed one for each session.
 
-The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 100kbit-5mbit window.
+The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 5-20mbit window.
 
 The Benefit: Your network signature remains a flat line. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
 
@@ -169,7 +169,7 @@ nload (interface)
 
 The Wifi interface for Parrot is usually 'wlo1' for Kali linux it's 'wlan0'
 
-The Goal: Monitor the "Outgoing" rate while idle. It should maintain a steady baseline above 100 kbit/s-5mbit. If it drops to 20-70 kbit/s, the noise floor has "stuttered" and requires a script restart.
+The Goal: Monitor the "Outgoing" rate while idle. It should maintain a steady baseline above 5-20mbit. 
 
 3. Random Packet Sizes
 
