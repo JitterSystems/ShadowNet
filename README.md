@@ -119,10 +119,12 @@ a entropy iat delay which further mitigates their tracking methods. An entropy I
 leaving your machine and also to every single individual packets being sent. This adds a random delay to the timing
 of every packets.
 
-15. Enhanced torrc config:
+15. Session-based aliases:
 
-NewCircuitPeriod, MaxCircuitDirtiness and EnforceDistinctSubnets has been set to 1 to ensure that tor never builds a circuit
-with relays within the same subnet and also making sure that your ip/circuit changes every 1 second (or 1-30 seconds).
+Now for each session you are either assigned on of these aliases
+
+Alias-Fixed - > For entire session you will be assigned a randomly picked sphinx-like fixed packet
+Alias-Random - > For entire session every single individual packets you send will be randomized
 
 
 
