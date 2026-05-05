@@ -50,9 +50,9 @@ double get_dns_iat() {
 int main(int argc, char *argv[]) {
 	int max_mtu = (argc > 1) ? atoi(argv[1]) : 1400;
 	int target_mbit = (argc > 2) ? atoi(argv[2]) : (5 + (rand() % 16));
+	int is_fixed = (argc > 3) ? atoi(argv[3]) : 0;
+	int fixed_payload_size = (argc > 4) ? atoi(argv[4]) : ((rand() % (max_mtu - 500 + 1)) + 500 - 42);
 
-	// We can now target generic exit nodes because the interface binding
-	// will forcefully push these packets through the lokitun0 tunnel.
 	const char *destinations[] = {"76.76.2.2", "84.200.69.80", "1.1.1.1", "9.9.9.9"};
 	const char *fake_domains[] = {"google.com", "bing.com", "duckduckgo.com", "protonmail.com", "github.com"};
 	int num_dests = 4;
@@ -60,17 +60,31 @@ int main(int argc, char *argv[]) {
 
 	srand(time(NULL));
 
-	int sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-	if(sock < 0) exit(1);
+	int sock_loki = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+	if(sock_loki < 0) exit(1);
 
 	int one = 1;
-	setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one));
+	setsockopt(sock_loki, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one));
 
-	// LOKINET BINDING FIX: Force this socket strictly through the lokitun0 interface
 	const char *device = "lokitun0";
-	if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, device, strlen(device)) < 0) {
+	if (setsockopt(sock_loki, SOL_SOCKET, SO_BINDTODEVICE, device, strlen(device)) < 0) {
 		printf("\033[0;31m[!] Error: Failed to bind heartbeat to lokitun0 interface.\033[0m\n");
 		exit(1);
+	}
+
+	char phys_iface[32] = {0};
+	FILE *fp = popen("ip route | grep default | grep -v lokitun | awk '{print $5}' | head -n1", "r");
+	if (fp) {
+		if (fgets(phys_iface, sizeof(phys_iface)-1, fp) != NULL) {
+			phys_iface[strcspn(phys_iface, "\n\r ")] = 0;
+		}
+		pclose(fp);
+	}
+
+	int sock_phys = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
+	if (sock_phys >= 0 && strlen(phys_iface) > 0) {
+		setsockopt(sock_phys, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one));
+		setsockopt(sock_phys, SOL_SOCKET, SO_BINDTODEVICE, phys_iface, strlen(phys_iface));
 	}
 
 	char packet[4096];
@@ -96,12 +110,21 @@ int main(int argc, char *argv[]) {
 			iph->protocol = IPPROTO_UDP; iph->daddr = sin.sin_addr.s_addr;
 			iph->check = csum((unsigned short *) packet, iph->tot_len);
 			udph->source = htons(49152 + (rand() % 16383));
-			udph->dest = htons(53); // DNS Query
+			udph->dest = htons(53);
 			udph->len = htons(sizeof(struct udphdr) + 32);
 			char *dns_data = packet + sizeof(struct iphdr) + sizeof(struct udphdr);
 			dns_data[0] = rand() % 255; dns_data[1] = rand() % 255; dns_data[2] = 0x01;
-			strcpy(dns_data + 12, fake_domains[rand() % num_domains]);
-			sendto(sock, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
+
+			if (is_fixed) {
+				strcpy(dns_data + 12, fake_domains[0]);
+			} else {
+				strcpy(dns_data + 12, fake_domains[rand() % num_domains]);
+			}
+
+			sendto(sock_loki, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
+			if (sock_phys >= 0 && strlen(phys_iface) > 0) {
+				sendto(sock_phys, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
+			}
 			last_dns_time = curr_time;
 		}
 
@@ -109,7 +132,14 @@ int main(int argc, char *argv[]) {
 		int total_burst_bytes = 0;
 
 		for(int b = 0; b < burst_size; b++) {
-			int jittered_payload_size = (rand() % (max_mtu - 500 + 1)) + 500 - 42;
+			int jittered_payload_size;
+
+			if (is_fixed) {
+				jittered_payload_size = fixed_payload_size;
+			} else {
+				jittered_payload_size = (rand() % (max_mtu - 500 + 1)) + 500 - 42;
+			}
+
 			if (jittered_payload_size < 64) jittered_payload_size = 64;
 
 			memset(packet, 0, 4096);
@@ -132,12 +162,14 @@ int main(int argc, char *argv[]) {
 			micro_req.tv_nsec = (rand() % 25000) + (rand() % 15000);
 			nanosleep(&micro_req, NULL);
 
-			sendto(sock, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
+			sendto(sock_loki, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
+			if (sock_phys >= 0 && strlen(phys_iface) > 0) {
+				sendto(sock_phys, packet, iph->tot_len, 0, (struct sockaddr *)&sin, sizeof(sin));
+			}
 		}
 
-		// Calculate precise timing delay required to maintain the target bitrate
 		double required_time = (double)total_burst_bytes / (target_mbit * 125000.0);
-		double jitter = required_time * (0.95 + ((double)(rand() % 10) / 100.0)); // Introduce +/- 5% variance around the target pace
+		double jitter = required_time * (0.95 + ((double)(rand() % 10) / 100.0));
 
 		req.tv_sec = (long)jitter;
 		req.tv_nsec = (long)((jitter - req.tv_sec) * 1000000000.0);
