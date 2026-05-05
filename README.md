@@ -119,9 +119,9 @@ a entropy iat delay which further mitigates their tracking methods. An entropy I
 leaving your machine and also to every single individual packets being sent. This adds a random delay to the timing
 of every packets.
 
-15. Session-based aliases:
+15. Session-based Aliases:
 
-Now for each session you are either assigned on of these aliases
+Now for each session you are either assigned one of these aliases
 
 Alias-Fixed - > For entire session you will be assigned a randomly picked sphinx-like fixed packet
 Alias-Random - > For entire session every single individual packets you send will be randomized
