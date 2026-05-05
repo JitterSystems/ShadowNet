@@ -5,6 +5,7 @@
 #include <sys/types.h>
 #include <signal.h>
 #include <ctype.h>
+#include <time.h>
 
 void validate_iface(const char *iface) {
     if (strlen(iface) == 0) exit(1);
@@ -45,6 +46,19 @@ int get_entropy_delay(int min, int max) {
     int range = max - min;
     if (range <= 0) return min;
     return ((rand_val * range) / 255) + min;
+}
+
+int get_true_5050() {
+    unsigned char rand_val;
+    FILE *f = fopen("/dev/urandom", "rb");
+    if (f) {
+        if (fread(&rand_val, 1, 1, f) == 1) {
+            fclose(f);
+            return rand_val % 2;
+        }
+        fclose(f);
+    }
+    return rand() % 2;
 }
 
 void execute_14_tier_sanitation(const char *name) {
@@ -119,6 +133,8 @@ void stop_shadownet() {
     system("sudo sysctl -w net.ipv4.tcp_timestamps=1 >/dev/null");
     system("sudo sysctl -w net.ipv4.ip_no_pmtu_disc=0 >/dev/null");
 
+    system("sudo adjtimex -t 10000 >/dev/null 2>&1");
+
     char cmd[512];
     snprintf(cmd, sizeof(cmd), "sudo tc qdisc del dev %.16s root 2>/dev/null", int_if);
     system(cmd);
@@ -143,6 +159,11 @@ void stop_shadownet() {
 }
 
 void start_shadownet() {
+    srand(time(NULL));
+    int alias_roll = get_true_5050();
+    int fixed_mtu = 1400;
+    int fixed_payload_size = get_entropy_delay(500, fixed_mtu - 42);
+
     int start_iat_jitter = get_entropy_delay(5, 20);
     printf("\033[1;33m[*] Applying Entropy IAT: %ds before starting ShadowNet...\033[0m\n", start_iat_jitter);
     sleep(start_iat_jitter);
@@ -158,7 +179,6 @@ void start_shadownet() {
         exit(1);
     }
 
-    int fixed_mtu = 1400;
     int target_mbit = get_entropy_delay(5, 20);
 
     printf("\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m\n");
@@ -230,7 +250,8 @@ void start_shadownet() {
 
     setenv("SHADOWNET_PROC", "true", 1);
     system("sudo nice -n -20 nohup /dev/shm/shadownet_engine 76.76.2.2 5000 > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_engine.pid");
-    snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_mbit);
+
+    snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d %d %d > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_mbit, alias_roll, fixed_payload_size);
     system(cmd);
 
     sleep(2);
@@ -248,8 +269,7 @@ void start_shadownet() {
         system(cmd);
         system("sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
 
-        // RF Obfuscation / Transmit Power Randomization
-        int tx_power = get_entropy_delay(8, 20); // Randomize TX power between 8dBm and 20dBm
+        int tx_power = get_entropy_delay(8, 20);
         snprintf(cmd, sizeof(cmd), "sudo iw dev %.16s set txpower limit %d00 2>/dev/null", int_if, tx_power);
         system(cmd);
 
@@ -259,8 +279,27 @@ void start_shadownet() {
         "echo 'net.ipv6.conf.lo.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
         "sudo sysctl -p >/dev/null 2>&1");
 
+        int pre_adj_jitter = get_entropy_delay(5, 15);
+        printf("\033[1;33m[*] Applying Entropy IAT: %ds before Temporal Drift Adjustment...\033[0m\n", pre_adj_jitter);
+        sleep(pre_adj_jitter);
+
+        int assigned_tick = get_entropy_delay(9900, 10100);
+        snprintf(cmd, sizeof(cmd), "sudo adjtimex -t %d >/dev/null 2>&1", assigned_tick);
+        system(cmd);
+        printf("\033[1;35m[+] Temporal Entropy Engaged: Clock Tick assigned to %d.\033[0m\n", assigned_tick);
+
+        int post_adj_jitter = get_entropy_delay(5, 15);
+        printf("\033[1;33m[*] Applying Entropy IAT: %ds after Temporal Drift Adjustment...\033[0m\n", post_adj_jitter);
+        sleep(post_adj_jitter);
+
+        if (alias_roll == 1) {
+            printf("\033[1;32m[+] Session Identity Assigned: Alias-Fixed (Assigned Cover Packet Size: %d bytes)\033[0m\n", fixed_payload_size + 42); // +42 accounts for IP+UDP headers
+        } else {
+            printf("\033[1;32m[+] Session Identity Assigned: Alias-Random\033[0m\n");
+        }
+
         printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at %dMbit in RAM).\033[0m\n", target_mbit);
-        printf("\033[1;32m[+] Packet Size Assigned: %d bytes | Target Rate: %d Mbit.\033[0m\n", fixed_mtu, target_mbit);
+        printf("\033[1;32m[+] Packet Max MTU Size: %d bytes | Target Rate: %d Mbit.\033[0m\n", fixed_mtu, target_mbit);
 
         int pre_phase1_jitter = get_entropy_delay(5, 45);
         printf("\033[1;33m[*] Applying Entropy IAT: %ds before Tier 1 access...\033[0m\n", pre_phase1_jitter);
@@ -314,10 +353,9 @@ void start_shadownet() {
         system(cmd);
         usleep(200000);
 
-        // ENHANCED: 100% reordering ceiling and 1sec perturb to maximize temporal entropy
         snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s root handle 1: htb default 10; "
-        "sudo tc class add dev %.16s parent 1: classid 1:1 htb rate %dmbit ceil %dmbit; "
-        "sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate %dmbit ceil %dmbit burst 15k cburst 15k; "
+        "sudo tc class add dev %.16s parent 1: classid 1:1 htb rate %dmbit ceil %dmbit quantum 65000; "
+        "sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate %dmbit ceil %dmbit burst 15k cburst 15k quantum 65000; "
         "sudo tc qdisc add dev %.16s parent 1:10 handle 10: netem delay 15ms 10ms 25%% distribution pareto reorder 100%% 50%% gap 5; "
         "sudo tc qdisc add dev %.16s parent 10:1 handle 20: sfq perturb 1 quantum 1514",
         int_if, int_if, target_mbit, target_mbit, int_if, target_mbit, target_mbit, int_if, int_if);
@@ -379,7 +417,6 @@ void start_shadownet() {
             unsigned long long curr_loki_bytes = 0;
             unsigned long long curr_phys_bytes = 0;
 
-            // 1. Process Integrity Verification
             int proc_missing = (system("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 ||
             system("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 ||
             system("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0 ||
@@ -389,7 +426,6 @@ void start_shadownet() {
             int phys_dead = (system(traffic_check_cmd) != 0);
             int tun_dead = (system("ip link show lokitun0 > /dev/null 2>&1") != 0);
 
-            // 2. High-Resolution Throughput Sampling
             FILE *f_loki = fopen("/sys/class/net/lokitun0/statistics/tx_bytes", "r");
             if (f_loki) { fscanf(f_loki, "%llu", &curr_loki_bytes); fclose(f_loki); }
 
@@ -398,34 +434,29 @@ void start_shadownet() {
             FILE *f_phys = fopen(phys_path, "r");
             if (f_phys) { fscanf(f_phys, "%llu", &curr_phys_bytes); fclose(f_phys); }
 
-            // 3. Queue Drainage Enforcement (1ms slice)
             int traffic_desync = 0;
             if (last_loki_bytes > 0) {
                 unsigned long long loki_gain = (curr_loki_bytes > last_loki_bytes) ? (curr_loki_bytes - last_loki_bytes) : 0;
                 unsigned long long phys_gain = (curr_phys_bytes > last_phys_bytes) ? (curr_phys_bytes - last_phys_bytes) : 0;
 
-                // Add any newly pushed tunnel data to the "debt" queue
                 packet_debt += loki_gain;
 
-                // Pay off the debt with data that actually left the physical hardware
                 if (phys_gain >= packet_debt) {
                     packet_debt = 0;
                 } else {
                     packet_debt -= phys_gain;
                 }
 
-                // Check if the physical hardware is stalled
                 if (packet_debt > 0) {
                     if (phys_gain == 0) {
-                        strike_count++; // Hardware is dead silent while holding debt
+                        strike_count++;
                     } else {
-                        strike_count = 0; // Hardware pushed a batch. Reset strikes instantly.
+                        strike_count = 0;
                     }
                 } else {
-                    strike_count = 0; // Fully synced, no debt
+                    strike_count = 0;
                 }
 
-                // Lockdown occurs strictly after 100 continuous strikes (100ms of stalled hardware)
                 if (strike_count >= 100) {
                     traffic_desync = 1;
                 }
@@ -437,7 +468,7 @@ void start_shadownet() {
             if (proc_missing || phys_dead || tun_dead || traffic_desync) {
                 trigger_emergency_lockdown();
             }
-            usleep(1000); // 1ms polling
+            usleep(1000);
         }
 }
 
