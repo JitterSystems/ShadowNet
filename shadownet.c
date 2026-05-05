@@ -283,7 +283,16 @@ void start_shadownet() {
         printf("\033[1;33m[*] Applying Entropy IAT: %ds before Temporal Drift Adjustment...\033[0m\n", pre_adj_jitter);
         sleep(pre_adj_jitter);
 
-        int assigned_tick = get_entropy_delay(9900, 10100);
+        int last_tick = 0;
+        FILE *f_tick = fopen("/dev/shm/shadownet_tick.last", "r");
+        if (f_tick) { fscanf(f_tick, "%d", &last_tick); fclose(f_tick); }
+        int assigned_tick;
+        do {
+            assigned_tick = get_entropy_delay(9900, 10100);
+        } while (assigned_tick == last_tick);
+        f_tick = fopen("/dev/shm/shadownet_tick.last", "w");
+        if (f_tick) { fprintf(f_tick, "%d", assigned_tick); fclose(f_tick); }
+
         snprintf(cmd, sizeof(cmd), "sudo adjtimex -t %d >/dev/null 2>&1", assigned_tick);
         system(cmd);
         printf("\033[1;35m[+] Temporal Entropy Engaged: Clock Tick assigned to %d.\033[0m\n", assigned_tick);
@@ -291,6 +300,12 @@ void start_shadownet() {
         int post_adj_jitter = get_entropy_delay(5, 15);
         printf("\033[1;33m[*] Applying Entropy IAT: %ds after Temporal Drift Adjustment...\033[0m\n", post_adj_jitter);
         sleep(post_adj_jitter);
+
+        printf("\033[1;36m[*] Hardening Regulatory Domain & GRUB Configuration...\033[0m\n");
+        system("if ! grep -q 'cfg80211.cfg80211_disable_reg_hint=1' /etc/default/grub; then "
+        "sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=\"\\([^\"]*\\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\\1 cfg80211.cfg80211_disable_reg_hint=1\"/' /etc/default/grub; "
+        "sudo update-grub; fi");
+        system("sudo iw reg set US 2>/dev/null || sudo iw reg set CA 2>/dev/null");
 
         if (alias_roll == 1) {
             printf("\033[1;32m[+] Session Identity Assigned: Alias-Fixed (Assigned Cover Packet Size: %d bytes)\033[0m\n", fixed_payload_size + 42); // +42 accounts for IP+UDP headers
@@ -416,6 +431,23 @@ void start_shadownet() {
             char traffic_check_cmd[512];
             unsigned long long curr_loki_bytes = 0;
             unsigned long long curr_phys_bytes = 0;
+
+            struct timespec rf_iat;
+            rf_iat.tv_sec = 0;
+            rf_iat.tv_nsec = (rand() % 500000);
+            nanosleep(&rf_iat, NULL);
+
+            int current_rf = get_entropy_delay(8, 20);
+            char rf_cmd[256];
+            snprintf(rf_cmd, sizeof(rf_cmd), "sudo iw dev %s set txpower limit %d00 2>/dev/null", int_if, current_rf);
+            system(rf_cmd);
+
+            if (system("iw reg get | grep -q 'country GB'") == 0) {
+                system("sudo iw reg set US 2>/dev/null || sudo iw reg set CA 2>/dev/null");
+            }
+
+            rf_iat.tv_nsec = (rand() % 500000);
+            nanosleep(&rf_iat, NULL);
 
             int proc_missing = (system("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 ||
             system("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 ||
