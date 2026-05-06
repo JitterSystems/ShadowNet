@@ -504,15 +504,61 @@ void start_shadownet() {
         }
 }
 
+void enable_boot() {
+    char path[1024];
+    char dir[1024];
+    ssize_t len = readlink("/proc/self/exe", path, sizeof(path)-1);
+    if (len != -1) {
+        path[len] = '\0';
+        strcpy(dir, path);
+        char *last_slash = strrchr(dir, '/');
+        if (last_slash) *last_slash = '\0';
+
+        char cmd[4096];
+        snprintf(cmd, sizeof(cmd),
+                 "printf '[Unit]\\nDescription=ShadowNet Service\\nAfter=network.target\\n\\n[Service]\\nType=simple\\nWorkingDirectory=%s\\nExecStart=%s start\\nExecStop=%s stop\\nKillMode=process\\nRemainAfterExit=yes\\n\\n[Install]\\nWantedBy=multi-user.target\\n' | sudo tee /etc/systemd/system/shadownet.service > /dev/null",
+                 dir, path, path);
+        system(cmd);
+        system("sudo systemctl daemon-reload");
+        system("sudo systemctl enable shadownet.service");
+        printf("\033[0;32m[+] ShadowNet persistence enabled. Will start on boot.\033[0m\n");
+    }
+}
+
+void disable_boot() {
+    system("sudo systemctl disable shadownet.service 2>/dev/null");
+    system("sudo rm -f /etc/systemd/system/shadownet.service");
+    system("sudo systemctl daemon-reload");
+    printf("\033[1;31m[-] ShadowNet persistence disabled.\033[0m\n");
+}
+
+void status_boot() {
+    if (access("/etc/systemd/system/shadownet.service", F_OK) != -1) {
+        if (system("systemctl is-enabled shadownet.service > /dev/null 2>&1") == 0) {
+            printf("\033[0;32m[+] ShadowNet persistence: ENABLED\033[0m\n");
+        } else {
+            printf("\033[1;33m[*] ShadowNet persistence: INSTALLED but DISABLED\033[0m\n");
+        }
+    } else {
+        printf("\033[1;31m[-] ShadowNet persistence: NOT INSTALLED\033[0m\n");
+    }
+}
+
 int main(int argc, char *argv[]) {
     if (argc < 2) {
-        printf("\033[0;31mUsage: sudo ./shadownet {start|stop}\033[0m\n");
+        printf("\033[0;31mUsage: sudo ./shadownet {start|stop|enable-boot|disable-boot|status-boot}\033[0m\n");
         return 1;
     }
     if (strcmp(argv[1], "start") == 0) {
         start_shadownet();
     } else if (strcmp(argv[1], "stop") == 0) {
         stop_shadownet();
+    } else if (strcmp(argv[1], "enable-boot") == 0) {
+        enable_boot();
+    } else if (strcmp(argv[1], "disable-boot") == 0) {
+        disable_boot();
+    } else if (strcmp(argv[1], "status-boot") == 0) {
+        status_boot();
     }
     return 0;
 }
