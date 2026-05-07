@@ -4,8 +4,8 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 if [[ $EUID -ne 0 ]]; then
-    echo -e "${RED}[!] Error: Run as root.${NC}"
-    exit 1
+    echo -e "${RED}[!] Error: Run as root.${NC}"
+    exit 1
 fi
 
 echo -e "${GREEN}[+] Installing Sovereign Dependencies & Lokinet...${NC}"
@@ -13,7 +13,7 @@ apt-get update -y
 
 # Lokinet Repository Addition
 sudo curl -so /etc/apt/trusted.gpg.d/oxen.gpg https://deb.oxen.io/pub.gpg
-echo "deb https://deb.oxen.io $(lsb_release -sc) main" | sudo tee /etc/apt/sources.list.d/oxen.list
+echo "deb https://deb.oxen.io bookworm main" | sudo tee /etc/apt/sources.list.d/oxen.list
 sudo apt update
 
 DEBIAN_FRONTEND=noninteractive apt-get install -y \
