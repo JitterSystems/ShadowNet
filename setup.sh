@@ -21,7 +21,7 @@ if [[ $EUID -ne 0 ]]; then
 	tor obfs4proxy iptables-persistent iproute2 curl \
 	macchanger haveged net-tools bind9-dnsutils \
 	adjtimex ethtool tshark build-essential lokinet \
-	rfkill linux-cpupower torsocks i2pd libmnl-dev libnftnl-dev
+	rfkill linux-cpupower torsocks libmnl-dev libnftnl-dev
 
 	sudo chown -R root:root /var/lib/lokinet
 	sudo chmod 644 /var/lib/lokinet/lokinet.ini
