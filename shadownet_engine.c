@@ -23,7 +23,8 @@ unsigned short csum(unsigned short *ptr, int nbytes) {
 	}
 	if(nbytes == 1) {
 		oddbyte = 0;
-		*((u_char*)&oddbyte) = *(u_char*)ptr;
+		// FIXED: Swapped standardless macro assignment out to standard primitive type pointer
+		*((unsigned char*)&oddbyte) = *(unsigned char*)ptr;
 		sum += oddbyte;
 	}
 	sum = (sum >> 16) + (sum & 0xffff);
