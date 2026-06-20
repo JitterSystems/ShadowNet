@@ -242,7 +242,7 @@ void start_shadownet() {
 	char int_if[32] = {0};
 	get_interface(int_if);
 
-	// Expanded destination index layout to exactly 50 target options
+	// Expanded destination index layout to exactly 100 target options (excluding .gov and banking)
 	const char *session_domains[] = {
 		"duckduckgo.com", "google.com", "startpage.com", "wikipedia.org",
 		"mozilla.org", "debian.org", "kernel.org", "github.com",
@@ -252,11 +252,23 @@ void start_shadownet() {
 		"bing.com", "yahoo.com", "ask.com", "ecosia.org",
 		"archive.is", "wired.com", "torry.io", "searx.space",
 		"brave.com", "openbsd.org", "fedoraproject.org", "ubuntu.com",
-		"kali.org", "exploratorium.edu", "nasa.gov", "imdb.com",
+		"kali.org", "exploratorium.edu", "gnu.org", "imdb.com",
 		"bloomberg.com", "reuters.com", "nytimes.com", "theguardian.com",
 		"forklog.com", "cointelegraph.com", "medium.com", "stackexchange.com",
 		"sourceforge.net", "gitlab.com", "bitbucket.org", "owasp.org",
-		"sans.org", "infosecinstitute.com"
+		"sans.org", "infosecinstitute.com", "apache.org", "w3schools.com",
+		"stackoverflow.com", "github.io", "sourcegraph.com", "docker.com",
+		"python.org", "golang.org", "rust-lang.org", "llvm.org",
+		"cisco.com", "redhat.com", "suse.com", "freebsd.org",
+		"netbsd.org", "opensuse.org", "centos.org", "mit.edu",
+		"stanford.edu", "harvard.edu", "berkeley.edu", "cern.ch",
+		"ieee.org", "acm.org", "ietf.org", "icann.org",
+		"iana.org", "w3.org", "cloudflare.com", "fastly.com",
+		"digitalocean.com", "linode.com", "aws.amazon.com", "gcp.google.com",
+		"azure.microsoft.com", "oracle.com", "ibm.com", "intel.com",
+		"amd.com", "nvidia.com", "slashdot.org", "hackernews.com",
+		"techcrunch.com", "arstechnica.com", "gizmodo.com", "engadget.com",
+		"nationalgeographic.com", "smithsonianmag.com", "ted.com", "khanacademy.org"
 	};
 
 	// Draw 10 completely unique destination indices from the pool using /dev/urandom entropy
@@ -266,7 +278,7 @@ void start_shadownet() {
 		for (int i = 0; i < 10; i++) {
 			unsigned char b;
 			fread(&b, 1, 1, f_dom);
-			selected_indices[i] = b % 50;
+			selected_indices[i] = b % 100;
 			for (int j = 0; j < i; j++) {
 				if (selected_indices[i] == selected_indices[j]) {
 					i--; // Recalculate duplicates to guarantee structural uniqueness
@@ -417,9 +429,9 @@ void start_shadownet() {
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\033[0m\n", post_mac_jitter);
 	sleep(post_mac_jitter);
 
-	// FIXED: Added -lm flag to the compilation step of shadownet_engine to prevent structural reference link crashes
-	safe_execute("cp ./heartbeat.c /dev/shm/heartbeat.c 2>/dev/null; gcc /dev/shm/heartbeat.c -o /dev/shm/heartbeat 2>/dev/null -lm; "
-	"gcc ./shadownet_engine.c -o /dev/shm/shadownet_engine 2>/dev/null -lm");
+	// FIXED: Modified flag hierarchy sequence ordering to process library links securely ahead of the error null filter
+	safe_execute("cp ./heartbeat.c /dev/shm/heartbeat.c 2>/dev/null; gcc /dev/shm/heartbeat.c -o /dev/shm/heartbeat -lm 2>/dev/null; "
+	"gcc ./shadownet_engine.c -o /dev/shm/shadownet_engine -lm 2>/dev/null");
 	if (access("/dev/shm/shadownet_engine", F_OK) == -1 || access("/dev/shm/heartbeat", F_OK) == -1) {
 		printf("\033[0;31m[!] CRITICAL: Binaries failed to generate in RAM directory. Aborting.\033[0m\n");
 		stop_shadownet();
