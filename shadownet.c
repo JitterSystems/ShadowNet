@@ -129,14 +129,13 @@ void execute_14_tier_sanitation(const char *name) {
 void trigger_emergency_lockdown() {
 	// XDP Map Toggle 1ms Killswitch implementation hook
 	safe_execute("sudo bpftool map update pinned /sys/fs/bpf/shadownet_lockdown_map key 0 0 0 0 value 1 0 0 0 2>/dev/null");
-	safe_execute("iptables -P OUTPUT DROP; iptables -P INPUT DROP; iptables -P FORWARD DROP");
-	safe_execute("ip6tables -P OUTPUT DROP; ip6tables -P INPUT DROP; ip6tables -P FORWARD DROP");
-	safe_execute("iptables -F; iptables -t nat -F; iptables -t mangle -F");
-	safe_execute("ip6tables -F; ip6tables -t nat -F; ip6tables -t mangle -F");
+	safe_execute("nft flush ruleset");
+	safe_execute("nft add table inet shadownet");
+	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy drop \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy drop \\; }");
+	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy drop \\; }");
 	execute_14_tier_sanitation("heartbeat");
 	execute_14_tier_sanitation("shadownet_engine");
-	execute_14_tier_sanitation("i2pd");
-	safe_execute("sudo systemctl stop lokinet tor i2pd");
+	safe_execute("sudo systemctl stop tor");
 	printf("\n\033[0;31m\a[!!!] SHADOWNET EMERGENCY LOCKDOWN ENGAGED. INTERNET PERMANENTLY KILLED.\033[0m\n");
 	printf("\033[1;33m[*] Run 'sudo ./shadownet stop' manually to restore connectivity.\033[0m\n");
 	exit(1);
@@ -149,22 +148,20 @@ void handle_sigint(int sig) {
 void stop_shadownet() {
 	char int_if[32] = {0};
 	get_interface(int_if);
-	safe_execute("iptables -P OUTPUT DROP; iptables -P INPUT DROP; iptables -P FORWARD DROP");
-	safe_execute("ip6tables -P OUTPUT DROP; ip6tables -P INPUT DROP; ip6tables -P FORWARD DROP");
-	safe_execute("iptables -F; iptables -t nat -F; iptables -t mangle -F");
-	safe_execute("ip6tables -F; ip6tables -t nat -F; ip6tables -t mangle -F");
+	safe_execute("nft flush ruleset");
+	safe_execute("nft add table inet shadownet");
+	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy drop \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy drop \\; }");
+	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy drop \\; }");
 	int exit_dns_jitter = get_entropy_delay(2, 8);
 	printf("\033[1;31m[*] Pending exit... Applying Exit DNS Entropy: %ds...\033[0m\n", exit_dns_jitter);
 	sleep(exit_dns_jitter);
 	int wait_time = get_entropy_delay(5, 60);
 	printf("\033[1;31m[*] Finalizing teardown... Waiting %d seconds.\033[0m\n", wait_time);
 	sleep(wait_time);
-	safe_execute("sudo systemctl stop lokinet i2pd 2>/dev/null");
 	safe_execute("sudo systemctl unmask chrony ntp systemd-timesyncd 2>/dev/null");
 	safe_execute("sudo systemctl start chrony ntp systemd-timesyncd 2>/dev/null");
 	execute_14_tier_sanitation("heartbeat");
 	execute_14_tier_sanitation("shadownet_engine");
-	execute_14_tier_sanitation("i2pd");
 	safe_execute("sudo rfkill unblock bluetooth 2>/dev/null");
 	safe_execute("sudo modprobe uvcvideo 2>/dev/null");
 	safe_execute("sudo modprobe snd_hda_intel 2>/dev/null");
@@ -189,10 +186,10 @@ void stop_shadownet() {
 	"sudo ip link set $IFACE down; sleep $RESTORE_JITTER; "
 	"sudo macchanger -m $(cat /dev/shm/shadownet_mac.bak) $IFACE; "
 	"sudo ip link set $IFACE up; rm /dev/shm/shadownet_mac.bak; fi");
-	safe_execute("iptables -P OUTPUT ACCEPT; iptables -P INPUT ACCEPT; iptables -P FORWARD ACCEPT");
-	safe_execute("ip6tables -P INPUT ACCEPT; ip6tables -P OUTPUT ACCEPT; ip6tables -P FORWARD ACCEPT");
-	safe_execute("iptables -F; iptables -t nat -F; iptables -t mangle -F");
-	safe_execute("ip6tables -F; ip6tables -t nat -F; ip6tables -t mangle -F");
+	safe_execute("nft flush ruleset");
+	safe_execute("nft add table inet shadownet");
+	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy accept \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy accept \\; }");
+	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy accept \\; }");
 	safe_execute("sudo rm -f /etc/NetworkManager/conf.d/dhcp-anon.conf");
 	safe_execute("systemctl restart NetworkManager");
 	safe_execute("sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
@@ -203,7 +200,7 @@ void stop_shadownet() {
 	safe_execute(xdp_off_cmd);
 
 	safe_execute("sudo rm -f /sys/fs/bpf/shadownet_lockdown_map 2>/dev/null");
-	printf("\033[1;31m[-] ShadowNet Deactivated. Integrity Restored.\033[0m\n");
+	printf("\n\033[1;31m[-] ShadowNet Deactivated. Integrity Restored.\033[0m\n");
 }
 
 /* eBPP Entropy Helper Function
@@ -242,6 +239,58 @@ void ebpp_entropy_scramble(char *rand_dest_ip, char *rand_src_ip, int *tos_val) 
 }
 
 void start_shadownet() {
+	char int_if[32] = {0};
+	get_interface(int_if);
+
+	// Expanded destination index layout to exactly 50 target options
+	const char *session_domains[] = {
+		"duckduckgo.com", "google.com", "startpage.com", "wikipedia.org",
+		"mozilla.org", "debian.org", "kernel.org", "github.com",
+		"archlinux.org", "eff.org", "torproject.org", "proton.me",
+		"tutanota.com", "signal.org", "tails.net", "qubes-os.org",
+		"vimeo.com", "archive.org", "reddit.com", "bbc.com",
+		"bing.com", "yahoo.com", "ask.com", "ecosia.org",
+		"archive.is", "wired.com", "torry.io", "searx.space",
+		"brave.com", "openbsd.org", "fedoraproject.org", "ubuntu.com",
+		"kali.org", "exploratorium.edu", "nasa.gov", "imdb.com",
+		"bloomberg.com", "reuters.com", "nytimes.com", "theguardian.com",
+		"forklog.com", "cointelegraph.com", "medium.com", "stackexchange.com",
+		"sourceforge.net", "gitlab.com", "bitbucket.org", "owasp.org",
+		"sans.org", "infosecinstitute.com"
+	};
+
+	// Draw 10 completely unique destination indices from the pool using /dev/urandom entropy
+	int selected_indices[10];
+	FILE *f_dom = fopen("/dev/urandom", "rb");
+	if (f_dom) {
+		for (int i = 0; i < 10; i++) {
+			unsigned char b;
+			fread(&b, 1, 1, f_dom);
+			selected_indices[i] = b % 50;
+			for (int j = 0; j < i; j++) {
+				if (selected_indices[i] == selected_indices[j]) {
+					i--; // Recalculate duplicates to guarantee structural uniqueness
+					break;
+				}
+			}
+		}
+		fclose(f_dom);
+	} else {
+		for(int i = 0; i < 10; i++) selected_indices[i] = i;
+	}
+
+	// LEAK PREVENTION GUARDRAIL: Instant absolute drop state applied immediately before background initialization
+	safe_execute("nft flush ruleset");
+	safe_execute("nft add table inet shadownet");
+	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy drop \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy drop \\; }");
+	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy drop \\; }");
+	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
+
+	// Seed localized safe interface pass rule specifically for the Tor process lifecycle bootstrap stage
+	char init_tor_pass[256];
+	snprintf(init_tor_pass, sizeof(init_tor_pass), "TOR_UID=$(id -u debian-tor); [ -n \"$TOR_UID\" ] && nft add rule inet shadownet output oifname \"%.16s\" skuid $TOR_UID accept", int_if);
+	safe_execute(init_tor_pass);
+
 	int alias_roll = 1;
 	int fixed_mtu = 1400;
 	int fixed_payload_size = get_entropy_delay(500, fixed_mtu - 42);
@@ -330,8 +379,7 @@ void start_shadownet() {
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after DHCP/Hostname Scrubbing...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] DHCP Hostname Scrubbing & Anonymization: ACTIVE\033[0m\n");
-	char int_if[32] = {0};
-	get_interface(int_if);
+
 	char cmd[2048];
 	signal(SIGINT, handle_sigint);
 	if (access("./heartbeat.c", F_OK) == -1 || access("./shadownet_engine.c", F_OK) == -1) {
@@ -342,20 +390,14 @@ void start_shadownet() {
 	printf("\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m\n");
 	execute_14_tier_sanitation("heartbeat");
 	execute_14_tier_sanitation("shadownet_engine");
-	execute_14_tier_sanitation("i2pd");
-	safe_execute("sudo systemctl stop chrony ntp systemd-timesyncd i2pd 2>/dev/null");
+	safe_execute("sudo systemctl stop chrony ntp systemd-timesyncd 2>/dev/null");
 	safe_execute("sudo systemctl mask chrony ntp systemd-timesyncd 2>/dev/null");
 	if (safe_execute("ps -ef | grep 'heartbeat\\|shadownet_engine' | grep -v grep > /dev/null 2>&1") == 0) {
 		printf("\033[0;31m[!] CRITICAL: Failed to forcefully terminate old processes. Aborting.\033[0m\n");
 		exit(1);
 	}
 	safe_execute("rm -f /dev/shm/shadownet_heartbeat.pid /dev/shm/shadownet_engine.pid /dev/shm/heartbeat /dev/shm/shadownet_engine");
-	safe_execute("iptables -P OUTPUT DROP");
-	// Explicitly search for _lokinet or lokinet user ids to preserve system infrastructure compatibility dynamically
-	safe_execute("LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
-	"if [ -n \"$LOKI_UID\" ]; then iptables -I OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; fi");
-	safe_execute("iptables -I INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
-	// Replaced sprintf with snprintf
+
 	snprintf(cmd, sizeof(cmd), "ip link show %.16s | grep ether | awk '{print $2}' > /dev/shm/shadownet_mac.bak", int_if);
 	safe_execute(cmd);
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s down", int_if);
@@ -365,20 +407,7 @@ void start_shadownet() {
 	sleep(mac_shift_jitter);
 	snprintf(cmd, sizeof(cmd), "sudo macchanger -r %.16s", int_if);
 	safe_execute(cmd);
-	int post_mac_iat = get_entropy_delay(5, 10);
-	printf("\033[1;33m[*] Applying Identity Entropy: %ds before Lokinet Ignition...\033[0m\n", post_mac_iat);
-	sleep(post_mac_iat);
-	printf("\033[1;36m[*] Overriding Lokinet Configuration...\033[0m\n");
-	safe_execute("printf '[network]\\nexit-node=exit.loki\\nenabled=true\\n\\n[dns]\\nbind=127.0.0.1\\n\\n[router]\\n' | sudo tee /var/lib/lokinet/lokinet.ini > /dev/null");
-	printf("\033[1;36m[*] Starting Lokinet Service (Exempted for Peer Discovery)...\033[0m\n");
-	safe_execute("sudo systemctl start lokinet");
-	int post_loki_iat = get_entropy_delay(15, 30);
-	printf("\033[1;33m[*] Applying Bootstrap Entropy: %ds allowing Lokinet to build paths...\033[0m\n", post_loki_iat);
-	sleep(post_loki_iat);
-	printf("\033[1;33m[*] Applying Entropy IAT: %ds before i2pd Initialization...\033[0m\n", get_entropy_delay(6, 12));
-	printf("\033[1;36m[*] Rewriting and Hardening i2pd Interface Parameters...\033[0m\n");
-	safe_execute("printf 'ifname = lokitun0\\nifname4 = 172.16.0.1\\naddress4 = 172.16.0.1\\nport = 4567\\nipv4 = true\\nipv6 = false\\n[ntcp2]\\nenabled = true\\nport = 4567\\n[ssu2]\\n[http]\\nenabled = true\\naddress = 172.16.0.1\\nport = 7070\\n[httpproxy]\\nenabled = true\\naddress = 172.16.0.1\\nport = 4444\\noutproxy = false.i2p\\n[socksproxy]\\nenabled = true\\naddress = 172.16.0.1\\nport = 4447\\n[sam]\\nenabled = true\\naddress = 172.16.0.1\\nport = 7656\\nportudp = 7655\\n[bob]\\nenabled = true\\naddress = 172.16.0.1\\nport = 2827\\n[i2cp]\\nenabled = true\\naddress = 172.16.0.1\\nport = 7654\\n[i2pcontrol]\\nenabled = true\\naddress = 172.16.0.1\\nport = 7650\\n[precomputation]\\n[upnp]\\n[meshnets]\\n[reseed]\\nverify = true\\n[addressbook]\\n[limits]\\n[trust]\\n[exploratory]\\n[persist]\\n' | sudo tee /etc/i2pd/i2pd.conf > /dev/null");
-	safe_execute("sudo systemctl start i2pd");
+
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s mtu %d", int_if, fixed_mtu);
 	safe_execute(cmd);
 	safe_execute("sudo sysctl -w net.ipv4.ip_no_pmtu_disc=1 >/dev/null");
@@ -387,7 +416,7 @@ void start_shadownet() {
 	int post_mac_jitter = get_entropy_delay(15, 60);
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\033[0m\n", post_mac_jitter);
 	sleep(post_mac_jitter);
-	safe_execute("iptables -I OUTPUT -o lokitun0 -p udp --dport 443 -j ACCEPT; iptables -I OUTPUT -o lokitun0 -p udp --dport 53 -j ACCEPT");
+
 	// FIXED: Added -lm flag to the compilation step of shadownet_engine to prevent structural reference link crashes
 	safe_execute("cp ./heartbeat.c /dev/shm/heartbeat.c 2>/dev/null; gcc /dev/shm/heartbeat.c -o /dev/shm/heartbeat 2>/dev/null -lm; "
 	"gcc ./shadownet_engine.c -o /dev/shm/shadownet_engine 2>/dev/null -lm");
@@ -409,13 +438,24 @@ void start_shadownet() {
 	char ebpp_tos_str[16];
 	snprintf(ebpp_tos_str, sizeof(ebpp_tos_str), "%d", ebpp_tos_val);
 	setenv("EBPP_IP_HEADER_TOS", ebpp_tos_str, 1);
-	char engine_cmd_buf[1024];
-	snprintf(engine_cmd_buf, sizeof(engine_cmd_buf), "sudo nice -n -20 nohup /dev/shm/shadownet_engine %s 53 > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_engine.pid", rand_dest_ip);
+
+	// Display the 10 randomly assigned targets for the active session
+	printf("\033[1;32m[+] Session Parallel Targets Assigned:\033[0m\n");
+	for (int i = 0; i < 10; i++) {
+		printf("\033[1;32m    [%d] %s\033[0m\n", i + 1, session_domains[selected_indices[i]]);
+	}
+
+	char engine_cmd_buf[2048];
+	snprintf(engine_cmd_buf, sizeof(engine_cmd_buf), "sudo nice -n -20 nohup /dev/shm/shadownet_engine %s %s %s %s %s %s %s %s %s %s > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_engine.pid",
+			 session_domains[selected_indices[0]], session_domains[selected_indices[1]], session_domains[selected_indices[2]], session_domains[selected_indices[3]], session_domains[selected_indices[4]],
+		  session_domains[selected_indices[5]], session_domains[selected_indices[6]], session_domains[selected_indices[7]], session_domains[selected_indices[8]], session_domains[selected_indices[9]]);
 	safe_execute(engine_cmd_buf);
-	snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d %d %d > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_mbit, alias_roll, fixed_payload_size);
+	snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d %d %d %s %s %s %s %s %s %s %s %s %s > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_mbit, alias_roll, fixed_payload_size,
+			 session_domains[selected_indices[0]], session_domains[selected_indices[1]], session_domains[selected_indices[2]], session_domains[selected_indices[3]], session_domains[selected_indices[4]],
+		  session_domains[selected_indices[5]], session_domains[selected_indices[6]], session_domains[selected_indices[7]], session_domains[selected_indices[8]], session_domains[selected_indices[9]]);
 	safe_execute(cmd);
 	char ebpp_mangle_cmd[512];
-	snprintf(ebpp_mangle_cmd, sizeof(ebpp_mangle_cmd), "sudo iptables -t mangle -A OUTPUT -o %.16s -j TOS --set-tos %d 2>/dev/null", int_if, ebpp_tos_val);
+	snprintf(ebpp_mangle_cmd, sizeof(ebpp_mangle_cmd), "sudo nft add rule inet shadownet output oifname \"%.16s\" ip tos set %d 2>/dev/null", int_if, ebpp_tos_val);
 	safe_execute(ebpp_mangle_cmd);
 
 	// Enforcing Loopix Poisson Persona configurations dynamically through random choice from /dev/urandom
@@ -498,11 +538,11 @@ void start_shadownet() {
 	"VirtualAddrNetworkIPv4 10.192.0.0/10\\n"
 	"AutomapHostsOnResolve 1\\n"
 	"TransPort 127.0.0.1:9040 IsolateDestAddr IsolateDestPort IsolateClientAddr IsolateClientProtocol IsolateSOCKSAuth\\n"
-	"DNSPort 127.0.0.1:5353\\n"
+	"DNSPort 5353\\n"
 	"LongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n"
 	"# Enforce 6-Hop Circuitry\\n"
 	"CircuitBuildTimeout 60\\n"
-	"NumEntryGuards 3\\n"
+	"NumEntryGuards 1\\n"
 	"EnforceDistinctSubnets 1\\n"
 	"NewCircuitPeriod 1\\n"
 	"MaxCircuitDirtiness 1\\n"
@@ -529,104 +569,58 @@ void start_shadownet() {
 	printf("\033[1;33m[*] Applying Loopix Cascade DNS Delay: %ds...\033[0m\n", dns_jitter);
 	sleep(dns_jitter);
 	safe_execute("echo 'nameserver 127.0.0.1' > /etc/resolv.conf");
-	safe_execute("iptables -F; iptables -t nat -F; iptables -t mangle -F");
-	safe_execute("ip6tables -P INPUT DROP; ip6tables -P FORWARD DROP; ip6tables -P OUTPUT DROP");
-	safe_execute("ip6tables -F; ip6tables -t nat -F; ip6tables -t mangle -F");
-	safe_execute("ip6tables -A OUTPUT -o lo -j ACCEPT; ip6tables -A INPUT -i lo -j ACCEPT");
-	safe_execute("iptables -P INPUT DROP; iptables -P FORWARD DROP; iptables -P OUTPUT DROP");
-	safe_execute("iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
-	safe_execute("iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT");
-	safe_execute("iptables -A OUTPUT -o lo -j ACCEPT; iptables -A INPUT -i lo -j ACCEPT");
-	// Replaced sprintf with snprintf
-	snprintf(cmd, sizeof(cmd), "iptables -A FORWARD -i lokitun0 -o %.16s -j ACCEPT", int_if);
-	safe_execute(cmd);
-	char gw_ip[32] = {0};
-	FILE *gw_fp = popen("ip route | grep default | awk '{print $3}' | head -n1", "r");
-	if (gw_fp) {
-		if (fgets(gw_ip, sizeof(gw_ip)-1, gw_fp) != NULL) {
-			gw_ip[strcspn(gw_ip, "\n\r ")] = 0;
-		}
-		pclose(gw_fp);
-		if (strlen(gw_ip) > 0) {
-			// Stripped out rules forcing Tor or TEE structures over lokitun0; tied debian-tor straight to physical gateway
-			snprintf(cmd, sizeof(cmd), "TOR_UID=$(id -u debian-tor); I2PD_UID=$(id -u i2pd 2>/dev/null); "
-			"[ -n \"$TOR_UID\" ] && iptables -A OUTPUT -o %.16s -m owner --uid-owner $TOR_UID -j ACCEPT; "
-			"[ -n \"$I2PD_UID\" ] && iptables -t mangle -A POSTROUTING -o lokitun0 -m owner --uid-owner $I2PD_UID -j ACCEPT; "
-			"iptables -t mangle -A POSTROUTING -o lokitun0 -j TEE --gateway %s", int_if, gw_ip);
-			if (safe_execute(cmd) != 0) {
-				usleep(1000);
-				trigger_emergency_lockdown();
-			}
-		} else {
-			usleep(1000);
-			trigger_emergency_lockdown();
-		}
-	} else {
-		usleep(1000);
-		trigger_emergency_lockdown();
-	}
 
-	// Dynamic parameters updated via snprintf to route debian-tor cleanly through physical interface instead of lokitun0
-	// Updated to grab i2pd user id dynamically, policy-route it via i2p_table to lokitun0, and perform a 1ms killswitch on failure.
-	char i2pd_uid_buf[32] = {0};
-	FILE *uid_fp = popen("id -u i2pd 2>/dev/null", "r");
-	if (uid_fp) {
-		if (fgets(i2pd_uid_buf, sizeof(i2pd_uid_buf) - 1, uid_fp) != NULL) {
-			i2pd_uid_buf[strcspn(i2pd_uid_buf, "\n\r ")] = 0;
-		}
-		pclose(uid_fp);
-	}
-	if (strlen(i2pd_uid_buf) == 0) {
-		usleep(1000);
-		trigger_emergency_lockdown();
-	}
+	// RESTRICTIVE FIREWALL LAYER: Rebuilt to guarantee Tor-only clearance out of the physical gateway
+	safe_execute("nft flush chain inet shadownet input; nft flush chain inet shadownet forward; nft flush chain inet shadownet output");
+	safe_execute("nft add chain inet shadownet input { policy drop \\; }; nft add chain inet shadownet forward { policy drop \\; }; nft add chain inet shadownet output { policy drop \\; }");
+	safe_execute("nft add table inet shadownet_nat; nft add chain inet shadownet_nat output { type nat hook output priority -100 \\; }");
+	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
 
-	snprintf(cmd, sizeof(cmd), "sudo ip rule del uidrange %s-%s table i2p_table 2>/dev/null; sudo ip rule add uidrange %s-%s table i2p_table", i2pd_uid_buf, i2pd_uid_buf, i2pd_uid_buf, i2pd_uid_buf);
-	safe_execute(cmd);
+	// FIXED: Flush directives placed securely in advance of drop policy enforcement hooks
+	safe_execute("nft flush chain inet shadownet input; nft flush chain inet shadownet forward; nft flush chain inet shadownet output");
+	safe_execute("nft add chain inet shadownet input { policy drop \\; }; nft add chain inet shadownet forward { policy drop \\; }; nft add chain inet shadownet output { policy drop \\; }");
+	safe_execute("nft add rule inet shadownet input ct state established,related accept");
+	safe_execute("nft add rule inet shadownet output ct state established,related accept");
+	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
 
-	snprintf(cmd, sizeof(cmd), "TOR_UID=$(id -u debian-tor); "
-	"LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
-	"I2PD_UID=%s; "
-	"if [ -n \"$LOKI_UID\" ]; then "
-	" iptables -t nat -A OUTPUT -m owner --uid-owner $LOKI_UID -j RETURN; "
-	" iptables -A OUTPUT -m owner --uid-owner $LOKI_UID -j ACCEPT; "
-	"fi; "
-	"if [ -n \"$I2PD_UID\" ]; then "
-	" sudo iptables -t mangle -A OUTPUT -m owner --uid-owner $I2PD_UID -j MARK --set-mark 2; "
-	" sudo iptables -A OUTPUT -o lokitun0 -m mark --mark 2 -j ACCEPT; "
-	" sudo iptables -A OUTPUT -m owner --uid-owner $I2PD_UID -o lokitun0 -j ACCEPT; "
-	" sudo iptables -A OUTPUT -m owner --uid-owner $I2PD_UID -j DROP; "
-	"fi; "
-	"iptables -A OUTPUT -o lokitun0 -j ACCEPT; "
-	"[ -n \"$TOR_UID\" ] && iptables -t nat -A OUTPUT -m owner --uid-owner $TOR_UID -j RETURN; "
-	"[ -n \"$TOR_UID\" ] && iptables -A OUTPUT -o lo -m owner --uid-owner $TOR_UID -j ACCEPT; "
-	"[ -n \"$TOR_UID\" ] && iptables -A OUTPUT -o %.16s -m owner --uid-owner $TOR_UID -j ACCEPT; "
-	"[ -n \"$I2PD_UID\" ] && iptables -A OUTPUT -o lokitun0 -m owner --uid-owner $I2PD_UID -j ACCEPT; "
-	"[ -n \"$TOR_UID\" ] && iptables -A OUTPUT ! -o %.16s -m owner --uid-owner $TOR_UID -j DROP; "
-	"[ -n \"$I2PD_UID\" ] && iptables -A OUTPUT ! -o lokitun0 -m owner --uid-owner $I2PD_UID -j DROP; "
-	"iptables -t nat -A OUTPUT -p udp --dport 53 -j REDIRECT --to-ports 5353; "
-	"iptables -t nat -A OUTPUT -p tcp --dport 53 -j REDIRECT --to-ports 5353; "
-	"iptables -A OUTPUT -p udp --dport 53 ! -d 127.0.0.1 -j DROP; "
-	"iptables -A OUTPUT -p tcp --dport 53 ! -d 127.0.0.1 -j DROP; "
-	"iptables -t nat -A OUTPUT -d 127.0.0.0/8 -j RETURN; "
-	"iptables -t nat -A OUTPUT -p tcp --syn -j REDIRECT --to-ports 9040; "
-	"iptables -A OUTPUT -d 127.0.0.0/8 -j ACCEPT", i2pd_uid_buf, int_if, int_if);
-	safe_execute(cmd);
-	safe_execute("iptables -A OUTPUT -m length --length 1401:65535 -j DROP");
-	safe_execute("iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable");
+	// Strict Global ICMP/ICMPv6 drop protections including deep loopback filtering allocations
+	safe_execute("nft add rule inet shadownet input ip protocol icmp drop");
+	safe_execute("nft add rule inet shadownet output ip protocol icmp drop");
+	safe_execute("nft add rule inet shadownet forward ip protocol icmp drop");
+	safe_execute("nft add rule inet shadownet input ip6 nexthdr icmpv6 drop");
+	safe_execute("nft add rule inet shadownet output ip6 nexthdr icmpv6 drop");
+	safe_execute("nft add rule inet shadownet forward ip6 nexthdr icmpv6 drop");
+	safe_execute("nft insert rule inet shadownet input iifname \"lo\" ip protocol icmp drop");
+	safe_execute("nft insert rule inet shadownet output oifname \"lo\" ip protocol icmp drop");
+	safe_execute("nft insert rule inet shadownet input iifname \"lo\" ip6 nexthdr icmpv6 drop");
+	safe_execute("nft insert rule inet shadownet output oifname \"lo\" ip6 nexthdr icmpv6 drop");
+
+	char tor_strict_rules[2048];
+	snprintf(tor_strict_rules, sizeof(tor_strict_rules),
+			 "TOR_UID=$(id -u debian-tor); "
+			 "if [ -n \"$TOR_UID\" ]; then "
+			 " nft add rule inet shadownet_nat output skuid $TOR_UID return; "
+			 " nft add rule inet shadownet output oifname \"%.16s\" skuid $TOR_UID accept; "
+			 " nft add rule inet shadownet output oifname != \"%.16s\" skuid $TOR_UID drop; "
+			 "fi; "
+			 "nft add rule inet shadownet_nat output meta mark 76 meta l4proto tcp redirect to 9040; "
+			 "nft add rule inet shadownet output meta mark 76 meta l4proto tcp accept; "
+			 "nft add rule inet shadownet_nat output udp dport 53 redirect to 5353; "
+			 "nft add rule inet shadownet_nat output tcp dport 53 redirect to 5353; "
+			 "nft add rule inet shadownet output udp dport 53 ip daddr != 127.0.0.1 drop; "
+			 "nft add rule inet shadownet output tcp dport 53 ip daddr != 127.0.0.1 drop; "
+			 "nft add rule inet shadownet_nat output ip daddr 127.0.0.0/8 return; "
+			 "nft add rule inet shadownet_nat output tcp flags syn redirect to 9040; "
+			 "nft add rule inet shadownet output ip daddr 127.0.0.0/8 accept; "
+			 "nft add rule inet shadownet output meta length 1401-65535 drop; "
+			 "nft add rule inet shadownet output reject with icmp type port-unreachable; "
+			 "nft add rule inet shadownet output oifname \"%.16s\" drop;", int_if, int_if, int_if);
+	safe_execute(tor_strict_rules);
+
 	printf("\033[0;32m[+] Loopix Parallel Mixing Layer Active. Inter-Arrival Time aligned.\033[0m\n");
 	printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Realistic 100ms Guarding Active...\033[0m\n");
-	// Added: create /etc/iproute2 directory if it doesn't exist
-	safe_execute("sudo mkdir -p /etc/iproute2");
-	safe_execute("grep -q \"200 i2p_table\" /etc/iproute2/rt_tables 2>/dev/null || echo \"200 i2p_table\" | sudo tee -a /etc/iproute2/rt_tables >/dev/null");
-	safe_execute("sudo ip rule del from 172.16.0.1 table i2p_table 2>/dev/null; sudo ip rule add from 172.16.0.1 table i2p_table");
-	safe_execute("sudo ip route replace default dev lokitun0 table i2p_table");
-	safe_execute("sudo ip route replace 127.0.0.0/8 dev lo table i2p_table");
-	safe_execute("sudo ip rule del uidrange 1000-1000 table i2p_table 2>/dev/null; sudo ip rule add uidrange 1000-1000 table i2p_table");
-	safe_execute("I2PD_UID=$(id -u i2pd 2>/dev/null); [ -n \"$I2PD_UID\" ] && sudo iptables -A OUTPUT -m owner --uid-owner $I2PD_UID ! -o lokitun0 -j REJECT");
-	safe_execute("sudo iptables -A OUTPUT -m owner --uid-owner i2pd ! -o lokitun0 -j REJECT");
-	safe_execute("sudo iptables -A OUTPUT -m owner --uid-owner i2pd ! -o lokitun0 -j DROP");
 	safe_execute("sudo ip route flush cache");
+
 	/* Inline eBPF Engine Generation and Deployment Hook
 	 * Compiles an inline eBPF classifier program that implements advanced /dev/urandom
 	 * entropy-based sub-second Inter-Arrival Time (IAT) delays, full context packet rerouting,
@@ -677,24 +671,19 @@ void start_shadownet() {
 		fclose(ebpf_f);
 		safe_execute("sudo mkdir -p /sys/fs/bpf 2>/dev/null; sudo mount -t bpf bpf /sys/fs/bpf 2>/dev/null");
 		safe_execute("clang -O2 -target bpf -c /dev/shm/shadownet_ebpf.c -o /dev/shm/shadownet_ebpf.o 2>/dev/null");
-		char ebpf_attach_cmd[512];
+		char ebpf_attach_cmd[1024];
 		snprintf(ebpf_attach_cmd, sizeof(ebpf_attach_cmd),
 				 "sudo tc qdisc add dev %.16s ingress 2>/dev/null; "
+				 "sudo tc filter add dev %.16s ingress protocol ip u32 match u32 0 0 police rate %dmbit burst 100k drop 2>/dev/null; "
 				 "sudo tc filter add dev %.16s ingress bpf da obj /dev/shm/shadownet_ebpf.o sec classifier 2>/dev/null; "
 				 "sudo tc filter add dev %.16s egress bpf da obj /dev/shm/shadownet_ebpf.o sec classifier 2>/dev/null; "
 				 "sudo ip link set dev %.16s xdp obj /dev/shm/shadownet_ebpf.o sec xdp_killswitch 2>/dev/null",
-		   int_if, int_if, int_if, int_if);
+		   int_if, int_if, target_mbit, int_if, int_if, int_if);
 		safe_execute(ebpf_attach_cmd);
 		printf("\033[1;32m[+] eBPF Bypass Subsystem: FULLY ENGAGED & ATTACHED to %.16s hooks\033[0m\n", int_if);
 	}
-	unsigned long long last_loki_bytes = 0;
-	unsigned long long last_phys_bytes = 0;
-	unsigned long long packet_debt = 0;
-	int strike_count = 0;
 	while(1) {
 		char traffic_check_cmd[512];
-		unsigned long long curr_loki_bytes = 0;
-		unsigned long long curr_phys_bytes = 0;
 		struct timespec rf_iat;
 
 		// Implemented continuous Loopix Poisson decay mathematical spacing using raw urandom entropy stream
@@ -712,47 +701,11 @@ void start_shadownet() {
 			safe_execute("sudo iw reg set US 2>/dev/null || sudo iw reg set CA 2>/dev/null");
 		}
 
-		proc_missing = (safe_execute("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 || safe_execute("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 || safe_execute("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0 || safe_execute("systemctl is-active --quiet lokinet") != 0 || safe_execute("systemctl is-active --quiet i2pd") != 0);
+		proc_missing = (safe_execute("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 || safe_execute("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 || safe_execute("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0);
 		snprintf(traffic_check_cmd, sizeof(traffic_check_cmd), "ip link show %s | grep -q 'UP'", int_if);
 		int phys_dead = (safe_execute(traffic_check_cmd) != 0);
-		int tun_dead = (safe_execute("ip link show lokitun0 > /dev/null 2>&1") != 0);
-		FILE *f_loki = fopen("/sys/class/net/lokitun0/statistics/tx_bytes", "r");
-		if (f_loki) {
-			fscanf(f_loki, "%llu", &curr_loki_bytes);
-			fclose(f_loki);
-		}
-		char phys_path[256];
-		snprintf(phys_path, sizeof(phys_path), "/sys/class/net/%s/statistics/tx_bytes", int_if);
-		FILE *f_phys = fopen(phys_path, "r");
-		if (f_phys) {
-			fscanf(f_phys, "%llu", &curr_phys_bytes);
-			fclose(f_phys);
-		}
-		int traffic_desync = 0;
-		if (last_loki_bytes > 0) {
-			unsigned long long loki_gain = (curr_loki_bytes > last_loki_bytes) ? (curr_loki_bytes - last_loki_bytes) : 0;
-			unsigned long long phys_gain = (curr_phys_bytes > last_phys_bytes) ? (curr_phys_bytes - last_phys_bytes) : 0;
-			packet_debt += loki_gain;
-			if (phys_gain >= packet_debt) {
-				packet_debt = 0;
-			} else {
-				packet_debt -= phys_gain;
-			}
-			if (packet_debt > 0) {
-				if (phys_gain == 0) { strike_count++;
-				} else {
-					strike_count = 0;
-				}
-			} else {
-				strike_count = 0;
-			}
-			if (strike_count >= 100) {
-				traffic_desync = 1;
-			}
-		}
-		last_loki_bytes = curr_loki_bytes;
-		last_phys_bytes = curr_phys_bytes;
-		if (proc_missing || phys_dead || tun_dead || traffic_desync) {
+
+		if (proc_missing || phys_dead) {
 			trigger_emergency_lockdown();
 		}
 		usleep(1000);
