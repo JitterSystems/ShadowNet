@@ -1,6 +1,6 @@
 Big Thanks to Jesus for making this gain attention! Turn to Jesus before it's too late. :) He loves You
 
-🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Lokinet + I2P + Mixnet Techniques)
+🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Mixnet Techniques)
 
 No longer rely on blending in a crowd to be anonymous like regular tor, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
 
@@ -35,11 +35,9 @@ The Benefit: It destroys Timing Correlation Attacks. By re-shuffling the interna
 
 2. Multi-Tiered Decoy Handshakes
 
-ShadowNet creates a "TLS Noise Floor" before establishing its primary secure tunnel.
+ShadowNet creates a "TLS Noise Floor" (cover traffic through tor) when establishing its primary secure tunnel.
 
-The Logic: Upon initialization, the protocol executes background handshakes with high-traffic, "safe" global CDNs (Google, Cloudflare, Microsoft).
-
-The Benefit: To an ISP, your initial connection looks like standard web browsing. This masks the "Start-up Signature" of the Tor protocol, blending your entry node connection into a flurry of unremarkable HTTPS traffic.
+The Logic: Upon initialization, the protocol executes background handshakes with high-traffic, "safe" global domains (Google, Yahoo, Medium).
 
 3. Hardware Clock-Drift Mimicry
 
@@ -62,7 +60,7 @@ ShadowNet maintains a disciplined 5-20mbit pulse regardless of your actual activ
 
 The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 5-20mbit window.
 
-The Benefit: Your network signature remains a flat line. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
+The Benefit: Your network signature remains a loopix consistent cover traffic. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
 
 🛡️ Anti-Forensic & Leak Protection
 6. The "WebRTC Killer" Firewall
@@ -81,11 +79,8 @@ The Benefit: You become a "needle in a haystack" of billions of Windows users. T
 
 8. Secure Distributed Time Sync (Chrono-Anonymization)
 
-Zero-Leak Proxying: Fetches time over encrypted TLS/Onion connections, avoiding the suspicious UDP Port 123 (NTP).
+Zero-Leak Proxying: Stops/Masks systemd-timesyncd, chrony & ntp.
 
-Going as far as to disabling NTP entirely also.
-
-Distributed Consensus: Calculates the median time from multiple high-trust sources to prevent "Time-Warp" attacks where an adversary feeds you fake time to de-sync your encryption.
 
 10. Volatile Memory & Entropy Scrambling
 
