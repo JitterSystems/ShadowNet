@@ -12,9 +12,7 @@
 // Global variable required by the monitoring loop condition
 int proc_missing = 0;
 
-/* Helper function to securely execute commands using fork and execve,
- * replacing the vulnerable system() call completely while maintaining execution context.
- */
+/* Helper function to securely execute commands using fork and execve, * replacing the vulnerable system() call completely while maintaining execution context. */
 int safe_execute(const char *cmd_string) {
 	pid_t pid = fork();
 	if (pid == 0) {
@@ -102,7 +100,7 @@ double get_loopix_poisson_delay(double lambda) {
 }
 
 void execute_14_tier_sanitation(const char *name) {
-	char cmd[2048];
+	char cmd[4096];
 	char short_name[16];
 	strncpy(short_name, name, 15);
 	short_name[15] = '\0';
@@ -131,12 +129,13 @@ void trigger_emergency_lockdown() {
 	safe_execute("sudo bpftool map update pinned /sys/fs/bpf/shadownet_lockdown_map key 0 0 0 0 value 1 0 0 0 2>/dev/null");
 	safe_execute("nft flush ruleset");
 	safe_execute("nft add table inet shadownet");
-	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy drop \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy drop \\; }");
-	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy drop \\; }");
+	safe_execute("nft add chain inet shadownet input '{ type filter hook input priority 0; policy drop; }'");
+	safe_execute("nft add chain inet shadownet forward '{ type filter hook forward priority 0; policy drop; }'");
+	safe_execute("nft add chain inet shadownet output '{ type filter hook output priority 0; policy drop; }'");
 	execute_14_tier_sanitation("heartbeat");
 	execute_14_tier_sanitation("shadownet_engine");
-	safe_execute("sudo systemctl stop tor");
-	printf("\n\033[0;31m\a[!!!] SHADOWNET EMERGENCY LOCKDOWN ENGAGED. INTERNET PERMANENTLY KILLED.\033[0m\n");
+	safe_execute("sudo systemctl stop lokinet");
+	printf("\n\n\033[0;31m\a[!!!] SHADOWNET EMERGENCY LOCKDOWN ENGAGED. INTERNET PERMANENTLY KILLED.\033[0m\n");
 	printf("\033[1;33m[*] Run 'sudo ./shadownet stop' manually to restore connectivity.\033[0m\n");
 	exit(1);
 }
@@ -150,14 +149,16 @@ void stop_shadownet() {
 	get_interface(int_if);
 	safe_execute("nft flush ruleset");
 	safe_execute("nft add table inet shadownet");
-	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy drop \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy drop \\; }");
-	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy drop \\; }");
+	safe_execute("nft add chain inet shadownet input '{ type filter hook input priority 0; policy drop; }'");
+	safe_execute("nft add chain inet shadownet forward '{ type filter hook forward priority 0; policy drop; }'");
+	safe_execute("nft add chain inet shadownet output '{ type filter hook output priority 0; policy drop; }'");
 	int exit_dns_jitter = get_entropy_delay(2, 8);
 	printf("\033[1;31m[*] Pending exit... Applying Exit DNS Entropy: %ds...\033[0m\n", exit_dns_jitter);
 	sleep(exit_dns_jitter);
 	int wait_time = get_entropy_delay(5, 60);
 	printf("\033[1;31m[*] Finalizing teardown... Waiting %d seconds.\033[0m\n", wait_time);
 	sleep(wait_time);
+	safe_execute("sudo systemctl stop lokinet 2>/dev/null");
 	safe_execute("sudo systemctl unmask chrony ntp systemd-timesyncd 2>/dev/null");
 	safe_execute("sudo systemctl start chrony ntp systemd-timesyncd 2>/dev/null");
 	execute_14_tier_sanitation("heartbeat");
@@ -188,31 +189,29 @@ void stop_shadownet() {
 	"sudo ip link set $IFACE up; rm /dev/shm/shadownet_mac.bak; fi");
 	safe_execute("nft flush ruleset");
 	safe_execute("nft add table inet shadownet");
-	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy accept \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy accept \\; }");
-	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy accept \\; }");
+	safe_execute("nft add chain inet shadownet input '{ type filter hook input priority 0; policy accept; }'");
+	safe_execute("nft add chain inet shadownet forward '{ type filter hook forward priority 0; policy accept; }'");
+	safe_execute("nft add chain inet shadownet output '{ type filter hook output priority 0; policy accept; }'");
+	safe_execute("nft flush table inet shadownet");
 	safe_execute("sudo rm -f /etc/NetworkManager/conf.d/dhcp-anon.conf");
-	safe_execute("systemctl restart NetworkManager");
+	safe_execute("sudo systemctl restart NetworkManager");
 	safe_execute("sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
-
 	// Clean up XDP killswitch attachments (FIXED: Formatted into buffer before calling safe_execute)
 	char xdp_off_cmd[256];
-	snprintf(xdp_off_cmd, sizeof(xdp_off_cmd), "sudo ip link set dev %.16s xdp off 2>/dev/null", int_if);
+	snprintf(xdp_off_cmd, sizeof(xdp_off_cmd), "sudo ip link set dev %.16s xdp off 2>/dev/null; sudo tc qdisc del dev %.16s ingress 2>/dev/null", int_if, int_if);
 	safe_execute(xdp_off_cmd);
-
 	safe_execute("sudo rm -f /sys/fs/bpf/shadownet_lockdown_map 2>/dev/null");
+	safe_execute("USER_UID=$(id -u $SUDO_USER 2>/dev/null || id -u); [ -n \"$USER_UID\" ] && sudo ip rule del uidrange $USER_UID-$USER_UID table shadownet_table 2>/dev/null; ROOT_UID=$(id -u root 2>/dev/null || echo 0); [ -n \"$ROOT_UID\" ] && sudo ip rule del uidrange $ROOT_UID-$ROOT_UID table shadownet_table 2>/dev/null");
 	printf("\n\033[1;31m[-] ShadowNet Deactivated. Integrity Restored.\033[0m\n");
 }
 
-/* eBPP Entropy Helper Function
- * Performs advanced /dev/urandom structural scrambling on local address space routing,
- * custom protocol headers, and handles high-resolution sub-second entropy timing delays.
- */
+/* eBPP Entropy Helper Function * Performs advanced /dev/urandom structural scrambling on local address space routing, * custom protocol headers, and handles high-resolution sub-second entropy timing delays. */
 void ebpp_entropy_scramble(char *rand_dest_ip, char *rand_src_ip, int *tos_val) {
 	unsigned char stream[8];
 	struct timespec ns_jitter;
 	FILE *f = fopen("/dev/urandom", "rb");
 	if (f) {
-		if (fread(stream, 1, 8, f) != 8) {
+		if (fread(&stream, 1, 8, f) != 8) {
 			for (int i = 0; i < 8; i++) stream[i] = stream[0];
 		}
 		fclose(f);
@@ -231,7 +230,7 @@ void ebpp_entropy_scramble(char *rand_dest_ip, char *rand_src_ip, int *tos_val) 
 	snprintf(rand_src_ip, 64, "127.%d.%d.%d", b2_s, b3_s, b4_s);
 	// Randomize Type of Service (ToS) / Differentiated Services Field
 	*tos_val = stream[6];
-	// High-resolution sub-second execution delay block (0 - 800,000 nanoseconds)
+	// High-resolution sub-second entropy delay block (0 - 800,000 nanoseconds)
 	unsigned int raw_nsec = ((stream[7] << 8) | stream[5]);
 	ns_jitter.tv_sec = 0;
 	ns_jitter.tv_nsec = raw_nsec % 800000;
@@ -239,74 +238,29 @@ void ebpp_entropy_scramble(char *rand_dest_ip, char *rand_src_ip, int *tos_val) 
 }
 
 void start_shadownet() {
-	char int_if[32] = {0};
-	get_interface(int_if);
-
-	// Expanded destination index layout to exactly 100 target options (excluding .gov and banking)
-	const char *session_domains[] = {
-		"duckduckgo.com", "google.com", "startpage.com", "wikipedia.org",
-		"mozilla.org", "debian.org", "kernel.org", "github.com",
-		"archlinux.org", "eff.org", "torproject.org", "proton.me",
-		"tutanota.com", "signal.org", "tails.net", "qubes-os.org",
-		"vimeo.com", "archive.org", "reddit.com", "bbc.com",
-		"bing.com", "yahoo.com", "ask.com", "ecosia.org",
-		"archive.is", "wired.com", "torry.io", "searx.space",
-		"brave.com", "openbsd.org", "fedoraproject.org", "ubuntu.com",
-		"kali.org", "exploratorium.edu", "gnu.org", "imdb.com",
-		"bloomberg.com", "reuters.com", "nytimes.com", "theguardian.com",
-		"forklog.com", "cointelegraph.com", "medium.com", "stackexchange.com",
-		"sourceforge.net", "gitlab.com", "bitbucket.org", "owasp.org",
-		"sans.org", "infosecinstitute.com", "apache.org", "w3schools.com",
-		"stackoverflow.com", "github.io", "sourcegraph.com", "docker.com",
-		"python.org", "golang.org", "rust-lang.org", "llvm.org",
-		"cisco.com", "redhat.com", "suse.com", "freebsd.org",
-		"netbsd.org", "opensuse.org", "centos.org", "mit.edu",
-		"stanford.edu", "harvard.edu", "berkeley.edu", "cern.ch",
-		"ieee.org", "acm.org", "ietf.org", "icann.org",
-		"iana.org", "w3.org", "cloudflare.com", "fastly.com",
-		"digitalocean.com", "linode.com", "aws.amazon.com", "gcp.google.com",
-		"azure.microsoft.com", "oracle.com", "ibm.com", "intel.com",
-		"amd.com", "nvidia.com", "slashdot.org", "hackernews.com",
-		"techcrunch.com", "arstechnica.com", "gizmodo.com", "engadget.com",
-		"nationalgeographic.com", "smithsonianmag.com", "ted.com", "khanacademy.org"
-	};
-
-	// Draw 10 completely unique destination indices from the pool using /dev/urandom entropy
-	int selected_indices[10];
-	FILE *f_dom = fopen("/dev/urandom", "rb");
-	if (f_dom) {
-		for (int i = 0; i < 10; i++) {
-			unsigned char b;
-			fread(&b, 1, 1, f_dom);
-			selected_indices[i] = b % 100;
-			for (int j = 0; j < i; j++) {
-				if (selected_indices[i] == selected_indices[j]) {
-					i--; // Recalculate duplicates to guarantee structural uniqueness
-					break;
-				}
-			}
-		}
-		fclose(f_dom);
-	} else {
-		for(int i = 0; i < 10; i++) selected_indices[i] = i;
-	}
-
-	// LEAK PREVENTION GUARDRAIL: Instant absolute drop state applied immediately before background initialization
-	safe_execute("nft flush ruleset");
-	safe_execute("nft add table inet shadownet");
-	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy drop \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy drop \\; }");
-	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy drop \\; }");
-	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
-
-	// Seed localized safe interface pass rule specifically for the Tor process lifecycle bootstrap stage
-	char init_tor_pass[256];
-	snprintf(init_tor_pass, sizeof(init_tor_pass), "TOR_UID=$(id -u debian-tor); [ -n \"$TOR_UID\" ] && nft add rule inet shadownet output oifname \"%.16s\" skuid $TOR_UID accept", int_if);
-	safe_execute(init_tor_pass);
-
 	int alias_roll = 1;
 	int fixed_mtu = 1400;
 	int fixed_payload_size = get_entropy_delay(500, fixed_mtu - 42);
 	int start_iat_jitter = get_entropy_delay(5, 20);
+
+	// Dynamically determine home directory based on running executable to guarantee RAM compiler alignment
+	char base_dir[1024] = {0};
+	ssize_t exelen = readlink("/proc/self/exe", base_dir, sizeof(base_dir) - 1);
+	if (exelen != -1) {
+		base_dir[exelen] = '\0';
+		char *last_slash = strrchr(base_dir, '/');
+		if (last_slash) *last_slash = '\0';
+	} else {
+		strcpy(base_dir, ".");
+	}
+
+	// Moved all global strict drop policies to the top of the function before background services are touched
+	safe_execute("nft flush ruleset");
+	safe_execute("nft add table inet shadownet");
+	safe_execute("nft add chain inet shadownet input '{ type filter hook input priority 0; policy drop; }'");
+	safe_execute("nft add chain inet shadownet forward '{ type filter hook forward priority 0; policy drop; }'");
+	safe_execute("nft add chain inet shadownet output '{ type filter hook output priority 0; policy drop; }'");
+
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before starting ShadowNet...\033[0m\n", start_iat_jitter);
 	sleep(start_iat_jitter);
 	int hw_iat;
@@ -391,13 +345,19 @@ void start_shadownet() {
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after DHCP/Hostname Scrubbing...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] DHCP Hostname Scrubbing & Anonymization: ACTIVE\033[0m\n");
-
+	char int_if[32] = {0};
+	get_interface(int_if);
 	char cmd[2048];
 	signal(SIGINT, handle_sigint);
-	if (access("./heartbeat.c", F_OK) == -1 || access("./shadownet_engine.c", F_OK) == -1) {
-		printf("\033[0;31m[!] CRITICAL: heartbeat.c or shadownet_engine.c missing. Aborting.\033[0m\n");
-		exit(1);
+
+	// Validate components exist relative to derived base directory location to eliminate path desyncs
+	char comp_chk_cmd[2048];
+	snprintf(comp_chk_cmd, sizeof(comp_chk_cmd), "[ -f '%s/heartbeat.c' ] && [ -f '%s/shadownet_engine.c' ]", base_dir, base_dir);
+	if (safe_execute(comp_chk_cmd) != 0) {
+		printf("\033[0;31m[!] CRITICAL: Core components missing from application path. Triggering Lockdown.\033[0m\n");
+		trigger_emergency_lockdown();
 	}
+
 	int target_mbit = get_entropy_delay(5, 20);
 	printf("\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m\n");
 	execute_14_tier_sanitation("heartbeat");
@@ -409,7 +369,14 @@ void start_shadownet() {
 		exit(1);
 	}
 	safe_execute("rm -f /dev/shm/shadownet_heartbeat.pid /dev/shm/shadownet_engine.pid /dev/shm/heartbeat /dev/shm/shadownet_engine");
+	safe_execute("nft add chain inet shadownet output '{ policy drop; }'");
 
+	// Explicitly search for _lokinet or lokinet user ids to preserve system infrastructure compatibility dynamically
+	safe_execute("LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
+	"if [ -n \"$LOKI_UID\" ]; then nft insert rule inet shadownet output meta skuid $LOKI_UID accept; fi");
+	safe_execute("nft insert rule inet shadownet input ct state '{ established, related }' accept");
+
+	// Replaced sprintf with snprintf
 	snprintf(cmd, sizeof(cmd), "ip link show %.16s | grep ether | awk '{print $2}' > /dev/shm/shadownet_mac.bak", int_if);
 	safe_execute(cmd);
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s down", int_if);
@@ -419,30 +386,45 @@ void start_shadownet() {
 	sleep(mac_shift_jitter);
 	snprintf(cmd, sizeof(cmd), "sudo macchanger -r %.16s", int_if);
 	safe_execute(cmd);
+	int post_mac_iat = get_entropy_delay(5, 10);
+	printf("\033[1;33m[*] Applying Identity Entropy: %ds before Lokinet Ignition...\033[0m\n", post_mac_iat);
+	sleep(post_mac_iat);
+	printf("\033[1;36m[*] Overriding Lokinet Configuration...\033[0m\n");
+	safe_execute("printf '[network]\\nexit-node=exit.loki\\nenabled=true\\n\\n[dns]\\nbind=127.0.0.1\\n\\n[router]\\n' | sudo tee /var/lib/lokinet/lokinet.ini > /dev/null");
+	safe_execute("sudo systemctl stop lokinet 2>/dev/null; sudo rm -f /var/log/lokinet/lokinet.log /var/lib/lokinet/lokinet.log 2>/dev/null");
+	printf("\033[1;36m[*] Starting Lokinet Service (Exempted for Peer Discovery)...\033[0m\n");
+	safe_execute("sudo systemctl start lokinet");
 
+	// --- PHYSICAL INTERFACE BROUGHT UP IMMEDIATELY WHEN LOKITUN0 IS IGNITED ---
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s mtu %d", int_if, fixed_mtu);
 	safe_execute(cmd);
 	safe_execute("sudo sysctl -w net.ipv4.ip_no_pmtu_disc=1 >/dev/null");
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s up", int_if);
 	safe_execute(cmd);
-	int post_mac_jitter = get_entropy_delay(15, 60);
-	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\033[0m\n", post_mac_jitter);
-	sleep(post_mac_jitter);
 
-	// FIXED: Modified flag hierarchy sequence ordering to process library links securely ahead of the error null filter
-	safe_execute("cp ./heartbeat.c /dev/shm/heartbeat.c 2>/dev/null; gcc /dev/shm/heartbeat.c -o /dev/shm/heartbeat -lm 2>/dev/null; "
-	"gcc ./shadownet_engine.c -o /dev/shm/shadownet_engine -lm 2>/dev/null");
+	// --- ADJUST NFTABLES FOR IMMEDIATE EARLY COVER TRAFFIC OUTFLOW ON BOTH INTERFACES ---
+	safe_execute("nft insert rule inet shadownet output oifname \"lokitun0\" accept");
+	safe_execute("nft insert rule inet shadownet input iifname \"lokitun0\" accept");
+	snprintf(cmd, sizeof(cmd), "nft insert rule inet shadownet output oifname \"%.16s\" udp dport 443 accept", int_if);
+	safe_execute(cmd);
+	snprintf(cmd, sizeof(cmd), "nft insert rule inet shadownet output oifname \"%.16s\" udp dport 53 accept", int_if);
+	safe_execute(cmd);
+
+	// --- EARLY BINARY COMPILATION AND IGNITION OF HEARTBEAT & ENGINE USING FULL CORRECT ABSOLUTE BASE PATHS ---
+	char compile_buf[4096];
+	snprintf(compile_buf, sizeof(compile_buf),
+			 "cp '%s/heartbeat.c' /dev/shm/heartbeat.c 2>/dev/null; gcc /dev/shm/heartbeat.c -o /dev/shm/heartbeat 2>/dev/null -lm; "
+			 "gcc '%s/shadownet_engine.c' -o /dev/shm/shadownet_engine 2>/dev/null -lm", base_dir, base_dir);
+	safe_execute(compile_buf);
+
 	if (access("/dev/shm/shadownet_engine", F_OK) == -1 || access("/dev/shm/heartbeat", F_OK) == -1) {
-		printf("\033[0;31m[!] CRITICAL: Binaries failed to generate in RAM directory. Aborting.\033[0m\n");
-		stop_shadownet();
-		exit(1);
+		printf("\033[0;31m[!] CRITICAL: Early Cover Binaries failed to generate in RAM directory. Engaging Lockdown.\033[0m\n");
+		trigger_emergency_lockdown();
 	}
 	setenv("SHADOWNET_PROC", "true", 1);
-	// Implement eBPP IP header and destination /dev/urandom entropy IAT delay and randomization completely
 	char rand_dest_ip[64];
 	char rand_src_ip[64];
 	int ebpp_tos_val = 0;
-	// Call helper to enforce structural eBPP parameters, source/dest modification, and structural sub-second timing delay
 	ebpp_entropy_scramble(rand_dest_ip, rand_src_ip, &ebpp_tos_val);
 	int dest_iat_delay = get_entropy_delay(1, 4);
 	printf("\033[1;33m[*] Applying Destination Entropy IAT: %ds...\033[0m\n", dest_iat_delay);
@@ -450,36 +432,49 @@ void start_shadownet() {
 	char ebpp_tos_str[16];
 	snprintf(ebpp_tos_str, sizeof(ebpp_tos_str), "%d", ebpp_tos_val);
 	setenv("EBPP_IP_HEADER_TOS", ebpp_tos_str, 1);
-
-	// Display the 10 randomly assigned targets for the active session
-	printf("\033[1;32m[+] Session Parallel Targets Assigned:\033[0m\n");
-	for (int i = 0; i < 10; i++) {
-		printf("\033[1;32m    [%d] %s\033[0m\n", i + 1, session_domains[selected_indices[i]]);
-	}
-
-	char engine_cmd_buf[2048];
-	snprintf(engine_cmd_buf, sizeof(engine_cmd_buf), "sudo nice -n -20 nohup /dev/shm/shadownet_engine %s %s %s %s %s %s %s %s %s %s > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_engine.pid",
-			 session_domains[selected_indices[0]], session_domains[selected_indices[1]], session_domains[selected_indices[2]], session_domains[selected_indices[3]], session_domains[selected_indices[4]],
-		  session_domains[selected_indices[5]], session_domains[selected_indices[6]], session_domains[selected_indices[7]], session_domains[selected_indices[8]], session_domains[selected_indices[9]]);
+	char engine_cmd_buf[1024];
+	snprintf(engine_cmd_buf, sizeof(engine_cmd_buf), "sudo nice -n -20 nohup /dev/shm/shadownet_engine %s 53 > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_engine.pid", rand_dest_ip);
 	safe_execute(engine_cmd_buf);
-	snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d %d %d %s %s %s %s %s %s %s %s %s %s > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_mbit, alias_roll, fixed_payload_size,
-			 session_domains[selected_indices[0]], session_domains[selected_indices[1]], session_domains[selected_indices[2]], session_domains[selected_indices[3]], session_domains[selected_indices[4]],
-		  session_domains[selected_indices[5]], session_domains[selected_indices[6]], session_domains[selected_indices[7]], session_domains[selected_indices[8]], session_domains[selected_indices[9]]);
+	snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d %d %d > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_mbit, alias_roll, fixed_payload_size);
 	safe_execute(cmd);
 	char ebpp_mangle_cmd[512];
 	snprintf(ebpp_mangle_cmd, sizeof(ebpp_mangle_cmd), "sudo nft add rule inet shadownet output oifname \"%.16s\" ip tos set %d 2>/dev/null", int_if, ebpp_tos_val);
 	safe_execute(ebpp_mangle_cmd);
 
+	// --- APPLY BOOTSTRAP ENTRORAPY PATH WAIT WITH COVER TRAFFIC ALREADY IN FLIGHT ---
+	int post_loki_iat = get_entropy_delay(15, 30);
+	printf("\033[1;33m[*] Applying Bootstrap Entropy: %ds allowing Lokinet to build paths...\033[0m\n", post_loki_iat);
+	sleep(post_loki_iat);
+
+	// --- LOKINET VERIFICATION LOOP TIMEOUT MATRIX ---
+	printf("\033[1;36m[*] Verifying Lokinet Node Connection Paths (1 Minute Timeout Guard)...\033[0m\n");
+	int lokinet_bootstrapped = 0;
+	for (int i = 0; i < 60; i++) {
+		// Isolated to target context keywords and bypass system slashes or timestamps entirely
+		if (safe_execute("sudo systemctl status lokinet 2>/dev/null | grep -i -E '(path|node|router|peer)' | grep -E '[0-9]+/[1-9][0-9]*' > /dev/null") == 0) {
+			lokinet_bootstrapped = 1;
+			break;
+		}
+		sleep(1);
+	}
+	if (!lokinet_bootstrapped) {
+		printf("\033[0;31m[!] Lokinet Failed to Establish Active Connection Paths within 60s. Triggering Lockdown.\033[0m\n");
+		trigger_emergency_lockdown();
+	}
+
+	int post_mac_jitter = get_entropy_delay(15, 60);
+	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\033[0m\n", post_mac_jitter);
+	sleep(post_mac_jitter);
+	safe_execute("nft insert rule inet shadownet output oifname \"lokitun0\" udp dport 443 accept; nft insert rule inet shadownet output oifname \"lokitun0\" udp dport 53 accept");
+
 	// Enforcing Loopix Poisson Persona configurations dynamically through random choice from /dev/urandom
 	unsigned char urand_roll = 0;
 	FILE *f_roll = fopen("/dev/urandom", "rb");
-	if (f_roll) { fread(&urand_roll, 1, 1, f_roll); fclose(f_roll); }
-
+	if (f_roll) { if (fread(&urand_roll, 1, 1, f_roll) != 1) urand_roll = 0; fclose(f_roll); }
 	sleep(2);
 	if (safe_execute("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 || safe_execute("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0) {
-		printf("\033[0;31m[!] CRITICAL: Core processes failed to lock in RAM. Aborting for OpSec.\033[0m\n");
-		stop_shadownet();
-		exit(1);
+		printf("\033[0;31m[!] CRITICAL: Core processes failed to lock in RAM. Engaging Lockdown.\033[0m\n");
+		trigger_emergency_lockdown();
 	}
 	printf("\033[1;36m[*] Hardening Interface & System Persistence (Anti-Sleep)...\033[0m\n");
 	snprintf(cmd, sizeof(cmd), "sudo iw dev %.16s set power_save off 2>/dev/null", int_if);
@@ -501,7 +496,7 @@ void start_shadownet() {
 	int last_tick = 0;
 	FILE *f_tick = fopen("/dev/shm/shadownet_tick.last", "r");
 	if (f_tick) {
-		fscanf(f_tick, "%d", &last_tick);
+		if (fscanf(f_tick, "%d", &last_tick) != 1) last_tick = 0;
 		fclose(f_tick);
 	}
 	int assigned_tick;
@@ -527,44 +522,14 @@ void start_shadownet() {
 	printf("\033[1;32m[+] Session Identity Assigned: Alias-Fixed (Assigned Cover Packet Size: %d bytes)\033[0m\n", fixed_payload_size + 42);
 	printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at %dMbit in RAM).\033[0m\n", target_mbit);
 	printf("\033[1;32m[+] Packet Max MTU Size: %d bytes | Target Rate: %d Mbit.\033[0m\n", fixed_mtu, target_mbit);
-	int pre_phase1_jitter = get_entropy_delay(5, 45);
-	printf("\033[1;33m[*] Applying Entropy IAT: %ds before Tier 1 access...\033[0m\n", pre_phase1_jitter);
-	sleep(pre_phase1_jitter);
-	int phase1_wait = get_entropy_delay(10, 30);
-	printf("\033[1;34m[*] Phase 1: Establishing Entry Tier (Nodes 1-3). Applying Jitter: %ds...\033[0m\n", phase1_wait);
-	sleep(phase1_wait);
-	int pre_phase2_jitter = get_entropy_delay(10, 30);
-	printf("\033[1;33m[*] Applying Entropy IAT: %ds before Tier 4 transition...\033[0m\n", pre_phase2_jitter);
-	sleep(pre_phase2_jitter);
-	int phase2_wait = get_entropy_delay(15, 45);
-	printf("\033[1;35m[*] Phase 2: Extending to Exit Tier (Nodes 4-6). Applying Entropy IAT: %ds...\033[0m\n", phase2_wait);
-	sleep(phase2_wait);
-	printf("\033[0;32m[+] 6-Hop Chain Established. Initializing ShadowNet Routing Protocol...\033[0m\n");
 	safe_execute("sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null; "
 	"sudo sysctl -w net.ipv4.ip_default_ttl=128 >/dev/null; "
 	"sudo sysctl -w net.ipv4.tcp_timestamps=0 >/dev/null; "
 	"sudo sysctl -w net.ipv4.conf.all.route_localnet=1 >/dev/null; "
+	"sudo sysctl -w net.ipv4.icmp_echo_ignore_all=1 >/dev/null; "
+	"sudo sysctl -w net.ipv4.conf.all.send_redirects=0 >/dev/null; "
+	"sudo sysctl -w net.ipv4.conf.default.send_redirects=0 >/dev/null; "
 	"sudo sysctl -w net.ipv6.conf.all.disable_ipv6=1 >/dev/null 2>&1");
-	safe_execute("sudo sed -i '/# --- ShadowNet Protocol Additions ---/,/# --- End ShadowNet ---/d' /etc/tor/torrc; "
-	"printf '\\n# --- ShadowNet Protocol Additions ---\\n"
-	"VirtualAddrNetworkIPv4 10.192.0.0/10\\n"
-	"AutomapHostsOnResolve 1\\n"
-	"TransPort 127.0.0.1:9040 IsolateDestAddr IsolateDestPort IsolateClientAddr IsolateClientProtocol IsolateSOCKSAuth\\n"
-	"DNSPort 5353\\n"
-	"LongLivedPorts 21,22,706,1863,5050,5190,5222,5223,6667,6697,8300\\n"
-	"# Enforce 6-Hop Circuitry\\n"
-	"CircuitBuildTimeout 60\\n"
-	"NumEntryGuards 1\\n"
-	"EnforceDistinctSubnets 1\\n"
-	"NewCircuitPeriod 1\\n"
-	"MaxCircuitDirtiness 1\\n"
-	"CircuitPadding 1\\n"
-	"ConnectionPadding 1\\n"
-	"ReducedConnectionPadding 0\\n"
-	"ReducedCircuitPadding 0\\n"
-	"# --- End ShadowNet ---\\n' >> /etc/tor/torrc; "
-	"sudo chown debian-tor:debian-tor /etc/tor/torrc; "
-	"systemctl restart tor@default; sleep 2");
 	snprintf(cmd, sizeof(cmd), "sudo tc qdisc del dev %.16s root 2>/dev/null", int_if);
 	safe_execute(cmd);
 	usleep(200000);
@@ -577,67 +542,105 @@ void start_shadownet() {
 	usleep(200000);
 	safe_execute("if [ -L /etc/resolv.conf ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; rm -f /etc/resolv.conf; "
 	"elif [ ! -f /dev/shm/resolv.conf.shadownet_bak ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; fi");
+
 	int dns_jitter = get_entropy_delay(1, 5);
 	printf("\033[1;33m[*] Applying Loopix Cascade DNS Delay: %ds...\033[0m\n", dns_jitter);
 	sleep(dns_jitter);
 	safe_execute("echo 'nameserver 127.0.0.1' > /etc/resolv.conf");
 
-	// RESTRICTIVE FIREWALL LAYER: Rebuilt to guarantee Tor-only clearance out of the physical gateway
-	safe_execute("nft flush chain inet shadownet input; nft flush chain inet shadownet forward; nft flush chain inet shadownet output");
-	safe_execute("nft add chain inet shadownet input { policy drop \\; }; nft add chain inet shadownet forward { policy drop \\; }; nft add chain inet shadownet output { policy drop \\; }");
-	safe_execute("nft add table inet shadownet_nat; nft add chain inet shadownet_nat output { type nat hook output priority -100 \\; }");
-	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
+	// --- EARLY BINDING & ROUTING TABLE IMPLEMENTATION TO PREVENT BOOTSTRAP STALLS ---
+	safe_execute("sudo mkdir -p /etc/iproute2");
+	safe_execute("grep -q '200 shadownet_table' /etc/iproute2/rt_tables || echo \"200 shadownet_table\" | sudo tee -a /etc/iproute2/rt_tables");
 
-	// FIXED: Flush directives placed securely in advance of drop policy enforcement hooks
-	safe_execute("nft flush chain inet shadownet input; nft flush chain inet shadownet forward; nft flush chain inet shadownet output");
-	safe_execute("nft add chain inet shadownet input { policy drop \\; }; nft add chain inet shadownet forward { policy drop \\; }; nft add chain inet shadownet output { policy drop \\; }");
-	safe_execute("nft add rule inet shadownet input ct state established,related accept");
-	safe_execute("nft add rule inet shadownet output ct state established,related accept");
-	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
+	safe_execute("sudo ip route add 127.0.0.0/8 dev lo table shadownet_table 2>/dev/null; sudo ip route add default dev lokitun0 table shadownet_table 2>/dev/null");
+	safe_execute("USER_UID=$(id -u $SUDO_USER 2>/dev/null || id -u); [ -n \"$USER_UID\" ] && sudo ip rule del uidrange $USER_UID-$USER_UID table shadownet_table 2>/dev/null; [ -n \"$USER_UID\" ] && sudo ip rule add uidrange $USER_UID-$USER_UID table shadownet_table; ROOT_UID=$(id -u root 2>/dev/null || echo 0); [ -n \"$ROOT_UID\" ] && sudo ip rule del uidrange $ROOT_UID-$ROOT_UID table shadownet_table 2>/dev/null; [ -n \"$ROOT_UID\" ] && sudo ip rule add uidrange $ROOT_UID-$ROOT_UID table shadownet_table");
 
-	// Strict Global ICMP/ICMPv6 drop protections including deep loopback filtering allocations
-	safe_execute("nft add rule inet shadownet input ip protocol icmp drop");
-	safe_execute("nft add rule inet shadownet output ip protocol icmp drop");
-	safe_execute("nft add rule inet shadownet forward ip protocol icmp drop");
-	safe_execute("nft add rule inet shadownet input ip6 nexthdr icmpv6 drop");
-	safe_execute("nft add rule inet shadownet output ip6 nexthdr icmpv6 drop");
-	safe_execute("nft add rule inet shadownet forward ip6 nexthdr icmpv6 drop");
-	safe_execute("nft insert rule inet shadownet input iifname \"lo\" ip protocol icmp drop");
-	safe_execute("nft insert rule inet shadownet output oifname \"lo\" ip protocol icmp drop");
-	safe_execute("nft insert rule inet shadownet input iifname \"lo\" ip6 nexthdr icmpv6 drop");
-	safe_execute("nft insert rule inet shadownet output oifname \"lo\" ip6 nexthdr icmpv6 drop");
-
-	char tor_strict_rules[2048];
-	snprintf(tor_strict_rules, sizeof(tor_strict_rules),
-			 "TOR_UID=$(id -u debian-tor); "
-			 "if [ -n \"$TOR_UID\" ]; then "
-			 " nft add rule inet shadownet_nat output skuid $TOR_UID return; "
-			 " nft add rule inet shadownet output oifname \"%.16s\" skuid $TOR_UID accept; "
-			 " nft add rule inet shadownet output oifname != \"%.16s\" skuid $TOR_UID drop; "
-			 "fi; "
-			 "nft add rule inet shadownet_nat output meta mark 76 meta l4proto tcp redirect to 9040; "
-			 "nft add rule inet shadownet output meta mark 76 meta l4proto tcp accept; "
-			 "nft add rule inet shadownet_nat output udp dport 53 redirect to 5353; "
-			 "nft add rule inet shadownet_nat output tcp dport 53 redirect to 5353; "
-			 "nft add rule inet shadownet output udp dport 53 ip daddr != 127.0.0.1 drop; "
-			 "nft add rule inet shadownet output tcp dport 53 ip daddr != 127.0.0.1 drop; "
-			 "nft add rule inet shadownet_nat output ip daddr 127.0.0.0/8 return; "
-			 "nft add rule inet shadownet_nat output tcp flags syn redirect to 9040; "
-			 "nft add rule inet shadownet output ip daddr 127.0.0.0/8 accept; "
-			 "nft add rule inet shadownet output meta length 1401-65535 drop; "
-			 "nft add rule inet shadownet output reject with icmp type port-unreachable; "
-			 "nft add rule inet shadownet output oifname \"%.16s\" drop;", int_if, int_if, int_if);
-	safe_execute(tor_strict_rules);
-
-	printf("\033[0;32m[+] Loopix Parallel Mixing Layer Active. Inter-Arrival Time aligned.\033[0m\n");
-	printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Realistic 100ms Guarding Active...\033[0m\n");
 	safe_execute("sudo ip route flush cache");
 
-	/* Inline eBPF Engine Generation and Deployment Hook
-	 * Compiles an inline eBPF classifier program that implements advanced /dev/urandom
-	 * entropy-based sub-second Inter-Arrival Time (IAT) delays, full context packet rerouting,
-	 * and parameter rewriting safely within the kernel workspace.
-	 */
+	safe_execute("nft flush table inet shadownet");
+	safe_execute("nft add chain inet shadownet input '{ type filter hook input priority 0; policy drop; }'");
+	safe_execute("nft add chain inet shadownet forward '{ type filter hook forward priority 0; policy drop; }'");
+	safe_execute("nft add chain inet shadownet output '{ type filter hook output priority 0; policy drop; }'");
+	safe_execute("nft add rule inet shadownet output oifname \"lo\" accept; nft add rule inet shadownet input iifname \"lo\" accept");
+	safe_execute("nft add rule inet shadownet input ct state '{ established, related }' accept");
+	safe_execute("nft add rule inet shadownet output oifname \"lokitun0\" ct state '{ established, related }' accept");
+
+	// Strict ICMP Block Layer (Cascaded Double Protection Matrix - Exempting Local Loopback Interface Signaling)
+	safe_execute("nft insert rule inet shadownet input ip protocol icmp drop");
+	safe_execute("nft insert rule inet shadownet input ip protocol icmp reject with icmp type host-unreachable");
+	safe_execute("nft insert rule inet shadownet output ip protocol icmp drop");
+	safe_execute("nft insert rule inet shadownet output ip protocol icmp reject with icmp type net-unreachable");
+	safe_execute("nft insert rule inet shadownet input meta l4proto icmpv6 drop");
+	safe_execute("nft insert rule inet shadownet input meta l4proto icmpv6 reject with icmpv6 type addr-unreachable");
+	safe_execute("nft insert rule inet shadownet output meta l4proto icmpv6 drop");
+	safe_execute("nft insert rule inet shadownet output meta l4proto icmpv6 reject with icmpv6 type addr-unreachable");
+	safe_execute("nft insert rule inet shadownet input iifname != \"lo\" ip protocol icmp drop");
+	safe_execute("nft insert rule inet shadownet input iifname != \"lo\" ip protocol icmp reject with icmp type host-unreachable");
+	safe_execute("nft insert rule inet shadownet output oifname != \"lo\" ip protocol icmp drop");
+	safe_execute("nft insert rule inet shadownet output oifname != \"lo\" ip protocol icmp reject with icmp type net-unreachable");
+	safe_execute("nft insert rule inet shadownet input iifname != \"lo\" meta l4proto icmpv6 drop");
+	safe_execute("nft insert rule inet shadownet input iifname != \"lo\" meta l4proto icmpv6 reject with icmpv6 type addr-unreachable");
+	safe_execute("nft insert rule inet shadownet output oifname != \"lo\" meta l4proto icmpv6 drop");
+	safe_execute("nft insert rule inet shadownet output oifname != \"lo\" meta l4proto icmpv6 reject with icmpv6 type addr-unreachable");
+
+	// Prevent invalid packet and leak structures
+	safe_execute("nft add rule inet shadownet output ct state invalid drop");
+
+	// Background execution configuration
+	// (Removed tracking/re-starting parameters for timesyncd to keep it persistently masked)
+	// Replaced sprintf with snprintf
+	snprintf(cmd, sizeof(cmd), "nft add rule inet shadownet forward iifname \"lokitun0\" oifname \"%.16s\" accept", int_if);
+	safe_execute(cmd);
+	char gw_ip[32] = {0};
+	FILE *gw_fp = popen("ip route | grep default | awk '{print $3}' | head -n1", "r");
+	if (gw_fp) {
+		if (fgets(gw_ip, sizeof(gw_ip)-1, gw_fp) != NULL) {
+			gw_ip[strcspn(gw_ip, "\n\r ")] = 0;
+		}
+		pclose(gw_fp);
+		if (strlen(gw_ip) > 0) {
+			snprintf(cmd, sizeof(cmd), "LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); [ -n \"$LOKI_UID\" ] && nft add rule inet shadownet output oifname \"%.16s\" meta skuid $LOKI_UID accept", int_if);
+			if (safe_execute(cmd) != 0) {
+				usleep(1000);
+				trigger_emergency_lockdown();
+			}
+		} else {
+			usleep(1000);
+			trigger_emergency_lockdown();
+		}
+	} else {
+		usleep(1000);
+		trigger_emergency_lockdown();
+	}
+
+	snprintf(cmd, sizeof(cmd), "LOKI_UID=$(id -u _lokinet 2>/dev/null || id -u lokinet 2>/dev/null); "
+	"USER_UID=$(id -u $SUDO_USER 2>/dev/null || id -u); "
+	"ROOT_UID=$(id -u root 2>/dev/null || echo 0); "
+	"if [ -n \"$LOKI_UID\" ]; then "
+	" nft add rule inet shadownet output oifname \"%.16s\" meta skuid $LOKI_UID accept; "
+	"fi; "
+	"nft add rule inet shadownet output oifname \"%.16s\" drop; " // Hard locked interface execution boundary
+	"if [ -n \"$USER_UID\" ]; then "
+	" nft add rule inet shadownet output oifname \"lokitun0\" meta skuid $USER_UID accept; "
+	" nft add rule inet shadownet output oifname \"lo\" meta skuid $USER_UID accept; "
+	" nft add rule inet shadownet output meta skuid $USER_UID drop; "
+	"fi; "
+	"if [ -n \"$ROOT_UID\" ]; then "
+	" nft add rule inet shadownet output oifname \"lokitun0\" meta skuid $ROOT_UID accept; "
+	" nft add rule inet shadownet output oifname \"lo\" meta skuid $ROOT_UID accept; "
+	" nft add rule inet shadownet output meta skuid $ROOT_UID drop; "
+	"fi; "
+	"nft add rule inet shadownet output oifname \"lo\" accept; "
+	"nft add rule inet shadownet output oifname \"lokitun0\" accept; "
+	"nft add rule inet shadownet output ip daddr 127.0.0.0/8 accept", int_if, int_if);
+	safe_execute(cmd);
+	safe_execute("nft add rule inet shadownet output meta length 1401-65535 drop");
+	safe_execute("nft add rule inet shadownet output reject with icmp type port-unreachable");
+	printf("\033[0;32m[+] Loopix Parallel Mixing Layer Active. Inter-Arrival Time aligned.\033[0m\n");
+
+	printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Realistic 100ms Guarding Active...\033[0m\n");
+
+	/* Inline eBPF Engine Generation and Deployment Hook * Compiles an inline eBPF classifier program that implements advanced /dev/urandom * entropy-based sub-second Inter-Arrival Time (IAT) delays, full context packet rerouting, * and parameter rewriting safely within the kernel workspace. */
 	printf("\033[1;36m[*] Injecting eBPF Subsystem for Core Dynamic Packet Processing & Rerouting...\033[0m\n");
 	FILE *ebpf_f = fopen("/dev/shm/shadownet_ebpf.c", "w");
 	if (ebpf_f) {
@@ -683,10 +686,10 @@ void start_shadownet() {
 		fclose(ebpf_f);
 		safe_execute("sudo mkdir -p /sys/fs/bpf 2>/dev/null; sudo mount -t bpf bpf /sys/fs/bpf 2>/dev/null");
 		safe_execute("clang -O2 -target bpf -c /dev/shm/shadownet_ebpf.c -o /dev/shm/shadownet_ebpf.o 2>/dev/null");
-		char ebpf_attach_cmd[1024];
+		char ebpf_attach_cmd[512];
 		snprintf(ebpf_attach_cmd, sizeof(ebpf_attach_cmd),
 				 "sudo tc qdisc add dev %.16s ingress 2>/dev/null; "
-				 "sudo tc filter add dev %.16s ingress protocol ip u32 match u32 0 0 police rate %dmbit burst 100k drop 2>/dev/null; "
+				 "sudo tc filter add dev %.16s ingress protocol ip matchall action police rate %dmbit burst 500k drop 2>/dev/null; "
 				 "sudo tc filter add dev %.16s ingress bpf da obj /dev/shm/shadownet_ebpf.o sec classifier 2>/dev/null; "
 				 "sudo tc filter add dev %.16s egress bpf da obj /dev/shm/shadownet_ebpf.o sec classifier 2>/dev/null; "
 				 "sudo ip link set dev %.16s xdp obj /dev/shm/shadownet_ebpf.o sec xdp_killswitch 2>/dev/null",
@@ -694,16 +697,21 @@ void start_shadownet() {
 		safe_execute(ebpf_attach_cmd);
 		printf("\033[1;32m[+] eBPF Bypass Subsystem: FULLY ENGAGED & ATTACHED to %.16s hooks\033[0m\n", int_if);
 	}
+
+	unsigned long long last_loki_bytes = 0;
+	unsigned long long last_phys_bytes = 0;
+	unsigned long long packet_debt = 0;
+	int strike_count = 0;
 	while(1) {
 		char traffic_check_cmd[512];
+		unsigned long long curr_loki_bytes = 0;
+		unsigned long long curr_phys_bytes = 0;
 		struct timespec rf_iat;
-
 		// Implemented continuous Loopix Poisson decay mathematical spacing using raw urandom entropy stream
 		double p_delay = get_loopix_poisson_delay(15.0);
 		rf_iat.tv_sec = (long)p_delay;
 		rf_iat.tv_nsec = (long)((p_delay - rf_iat.tv_sec) * 1000000000.0) % 1000000000L;
 		nanosleep(&rf_iat, NULL);
-
 		int current_rf = get_entropy_delay(8, 20);
 		char rf_cmd[256];
 		// Hardened to safely assign current_rf variable parameter
@@ -712,12 +720,47 @@ void start_shadownet() {
 		if (safe_execute("iw reg get | grep -q 'country GB'") == 0) {
 			safe_execute("sudo iw reg set US 2>/dev/null || sudo iw reg set CA 2>/dev/null");
 		}
-
-		proc_missing = (safe_execute("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 || safe_execute("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 || safe_execute("ps -ef | grep '/usr/bin/tor' | grep -v grep > /dev/null") != 0);
+		proc_missing = (safe_execute("ps -ef | grep '/dev/shm/shadownet_engine' | grep -v grep > /dev/null") != 0 || safe_execute("ps -ef | grep '/dev/shm/heartbeat' | grep -v grep > /dev/null") != 0 || safe_execute("systemctl is-active --quiet lokinet") != 0);
 		snprintf(traffic_check_cmd, sizeof(traffic_check_cmd), "ip link show %s | grep -q 'UP'", int_if);
 		int phys_dead = (safe_execute(traffic_check_cmd) != 0);
-
-		if (proc_missing || phys_dead) {
+		int tun_dead = (safe_execute("ip link show lokitun0 > /dev/null 2>&1") != 0);
+		FILE *f_loki = fopen("/sys/class/net/lokitun0/statistics/tx_bytes", "r");
+		if (f_loki) {
+			if (fscanf(f_loki, "%llu", &curr_loki_bytes) != 1) curr_loki_bytes = last_loki_bytes;
+			fclose(f_loki);
+		}
+		char phys_path[256];
+		snprintf(phys_path, sizeof(phys_path), "/sys/class/net/%s/statistics/tx_bytes", int_if);
+		FILE *f_phys = fopen(phys_path, "r");
+		if (f_phys) {
+			if (fscanf(f_phys, "%llu", &curr_phys_bytes) != 1) curr_phys_bytes = last_phys_bytes;
+			fclose(f_phys);
+		}
+		int traffic_desync = 0;
+		if (last_loki_bytes > 0) {
+			unsigned long long loki_gain = (curr_loki_bytes > last_loki_bytes) ? (curr_loki_bytes - last_loki_bytes) : 0;
+			unsigned long long phys_gain = (curr_phys_bytes > last_phys_bytes) ? (curr_phys_bytes - last_phys_bytes) : 0;
+			packet_debt += loki_gain;
+			if (phys_gain >= packet_debt) {
+				packet_debt = 0;
+			} else {
+				packet_debt -= phys_gain;
+			}
+			if (packet_debt > 0) {
+				if (phys_gain == 0) { strike_count++;
+				} else {
+					strike_count = 0;
+				}
+			} else {
+				strike_count = 0;
+			}
+			if (strike_count >= 100) {
+				traffic_desync = 1;
+			}
+		}
+		last_loki_bytes = curr_loki_bytes;
+		last_phys_bytes = curr_phys_bytes;
+		if (proc_missing || phys_dead || tun_dead || traffic_desync) {
 			trigger_emergency_lockdown();
 		}
 		usleep(1000);
