@@ -1,6 +1,6 @@
 Big Thanks to Jesus for making this gain attention! Turn to Jesus before it's too late. :) He loves You
 
-🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Mixnet Techniques)
+🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Lokinet + Mixnet Techniques)
 
 No longer rely on blending in a crowd to be anonymous like regular tor, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
 
@@ -22,7 +22,7 @@ Asynchronous Obfuscation Layer:
 ShadowNet is an advanced network hardening framework that transforms a standard workstation into a "Private Mixnet of One." By forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform tunnel, it eliminates the behavioral metadata that state-level adversaries use to deanonymize users.
 🛡️ Core Evolutionary Features
 
-ShadowNet forces all system-wide traffic through Tor while utilizing Lokinet as the cover traffic and implementing Mixnet-like techniques.
+ShadowNet forces all system-wide traffic through Lokinet while implementing a cover traffic and utilizing Mixnet-like techniques.
 
 
 1. Asynchronous Message Queuing (SFQ)/Jitter Randomized delay/reordering and shuffling
@@ -96,14 +96,7 @@ added so that between the packets being sent, they never send in the same random
 the randomization of them being sent unpredictable) Added for every single burst leaving the machine and
 The Start/Disconnect delay, to the mac address changing and the dns requests.
 
-13. 6 Hops instead of 3:
-
-ShadowNet now forces to route through 6 tor circuits, instead of the orignal 3 to further enhance privacy and anonymity.
-Makes it even more harder to be tracked that way (Because of this, connection may be a bit slower than usual
-but still functional and able to browse normally)
-
-
-14. Temporal Jitter:
+12. Temporal Jitter:
 
 Now, the crystal within the motherboard of your computer will not reveal the network hardware informations
 such as the make or model of it to a Global Surevillance Adversary like the NSA. Each packets within a burst has
@@ -111,13 +104,13 @@ a entropy iat delay which further mitigates their tracking methods. An entropy I
 leaving your machine and also to every single individual packets being sent. This adds a random delay to the timing
 of every packets.
 
-15. Session-based Alias-Fixed:
+13. Session-based Alias-Fixed:
 
 Now for each session you are either assigned one of these aliases
 
 Alias-Fixed - > For the entire session you will be assigned a randomly picked sphinx-like fixed packet
 
-16. Microphone/Webcam	Kill + Unload:
+14. Microphone/Webcam	Kill + Unload:
 
  Prevents remote audio/video surveillance.
  
@@ -133,7 +126,7 @@ Power Lock	Governor:
 
 change	Masks CPU frequency side-channels.
 
-17. Loopix Mixnet-like techniques:
+15. Loopix Mixnet-like techniques:
 
     Added as additional helper to the entropy iat delays, packet reodering and shuffling.
 
