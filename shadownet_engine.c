@@ -5,9 +5,11 @@
 #include <time.h>
 #include <sys/socket.h>
 #include <netinet/ip.h>
-#include <netinet/udp.h>
+#include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <math.h> // Added for Loopix exponent mathematical models
+#include <netdb.h>
+#include <signal.h>
 
 // FIXED: Integrated the identical structural Internet checksum calculation utility function directly to fix the linker error
 unsigned short csum(unsigned short *ptr, int nbytes) {
@@ -21,7 +23,8 @@ unsigned short csum(unsigned short *ptr, int nbytes) {
 	}
 	if(nbytes == 1) {
 		oddbyte = 0;
-		*((u_char*)&oddbyte) = *(u_char*)ptr;
+		// FIXED: Swapped standardless macro assignment out to standard primitive type pointer
+		*((unsigned char*)&oddbyte) = *(unsigned char*)ptr;
 		sum += oddbyte;
 	}
 	sum = (sum >> 16) + (sum & 0xffff);
@@ -30,28 +33,28 @@ unsigned short csum(unsigned short *ptr, int nbytes) {
 	return answer;
 }
 
-void inject_entropy_pulse(int sock, struct sockaddr_in *target) {
+void inject_entropy_pulse(int *sock_ptr, struct sockaddr_in *target, int mark) {
 	// Upgraded buffer length to host full Custom IP + UDP header generation block
 	char packet[128];
 	memset(packet, 0, 128);
 
 	struct iphdr *iph = (struct iphdr *) packet;
-	struct udphdr *udph = (struct udphdr *) (packet + sizeof(struct iphdr));
+	struct tcphdr *tcph = (struct tcphdr *) (packet + sizeof(struct iphdr));
 
 	// Dynamic entropy collection for raw structural layer randomization
 	unsigned int r_ip_id = 0, r_src_ip = 0, r_tos = 0;
 	FILE *f_hdr = fopen("/dev/urandom", "rb");
 	if (f_hdr) {
-		if (fread(&r_ip_id, sizeof(r_ip_id), 1, f_hdr) != 1) r_ip_id = 11;
-		if (fread(&r_src_ip, sizeof(r_src_ip), 1, f_hdr) != 1) r_src_ip = 22;
-		if (fread(&r_tos, sizeof(r_tos), 1, f_hdr) != 1) r_tos = 33;
+		if (fread(&r_ip_id, sizeof(r_ip_id), 1, f_hdr) != 1) r_ip_id = 0;
+		if (fread(&r_src_ip, sizeof(r_src_ip), 1, f_hdr) != 1) r_src_ip = 0;
+		if (fread(&r_tos, sizeof(r_tos), 1, f_hdr) != 1) r_tos = 0;
 		fclose(f_hdr);
 	} else {
 		r_ip_id = 11; r_src_ip = 22; r_tos = 33;
 	}
 
 	int payload_len = 64;
-	int total_len = sizeof(struct iphdr) + sizeof(struct udphdr) + payload_len;
+	int total_len = sizeof(struct iphdr) + sizeof(struct tcphdr) + payload_len;
 
 	// Custom Raw IP Layer Setup
 	iph->ihl = 5;
@@ -61,25 +64,34 @@ void inject_entropy_pulse(int sock, struct sockaddr_in *target) {
 	iph->id = htons(r_ip_id % 65535);
 	iph->frag_off = 0;
 	iph->ttl = 64 + (r_tos % 65);
-	iph->protocol = IPPROTO_UDP;
+	iph->protocol = IPPROTO_TCP;
 	iph->daddr = target->sin_addr.s_addr;
 
 	// Checksum calculation over full header block area
 	iph->check = csum((unsigned short *) packet, total_len);
 
-	// Setup UDP Layer directly inside the sequence
-	udph->source = htons(1024 + (r_ip_id % 64511));
-	udph->dest = target->sin_port;
-	udph->len = htons(sizeof(struct udphdr) + payload_len);
-	udph->check = 0;
+	// Setup TCP Layer directly inside the sequence
+	tcph->source = htons(1024 + (r_ip_id % 64511));
+	tcph->dest = target->sin_port;
+	tcph->doff = 5;
+	tcph->check = 0;
 
 	// Generate the internal entropy payload block directly matching the exact signature
-	char *data_payload = packet + sizeof(struct iphdr) + sizeof(struct udphdr);
+	char *data_payload = packet + sizeof(struct iphdr) + sizeof(struct tcphdr);
 	data_payload[0] = (char)(r_ip_id & 0xFF);
 	data_payload[1] = (char)(r_src_ip & 0xFF);
 	data_payload[2] = 0x01; // Loopix constant control flow flag placeholder
 
-	sendto(sock, packet, total_len, 0, (struct sockaddr*)target, sizeof(*target));
+	// P2P SWARM POOLING INJECTION: Add distributed multi-path emulation markers
+	data_payload[3] = (char)((r_ip_id >> 8) & 0xFF);
+
+	if (send(*sock_ptr, packet, total_len, MSG_NOSIGNAL) < 0) {
+		close(*sock_ptr);
+		*sock_ptr = socket(AF_INET, SOCK_STREAM, 0);
+		setsockopt(*sock_ptr, SOL_SOCKET, SO_MARK, &mark, sizeof(mark));
+		connect(*sock_ptr, (struct sockaddr*)target, sizeof(*target));
+		send(*sock_ptr, packet, total_len, MSG_NOSIGNAL);
+	}
 }
 
 // Loopix Helper: Generates exponential distribution delay values using urandom factor fields
@@ -87,7 +99,7 @@ double get_loopix_engine_delay(double lambda) {
 	unsigned int raw_entropy = 0;
 	FILE *f = fopen("/dev/urandom", "rb");
 	if (f) {
-		if (fread(&raw_entropy, sizeof(raw_entropy), 1, f) != 1) raw_entropy = 0;
+		if (fread(&raw_entropy, sizeof(raw_entropy), 1, f) != 1) raw_entropy = 1;
 		fclose(f);
 	}
 	double u = (double)raw_entropy / 4294967295.0;
@@ -96,30 +108,71 @@ double get_loopix_engine_delay(double lambda) {
 }
 
 int main(int argc, char *argv[]) {
-	if (argc < 2) return 1;
+	if (argc < 11) return 1;
+	signal(SIGPIPE, SIG_IGN);
 
-	// Shifted from IPPROTO_UDP to IPPROTO_RAW to explicitly support manual IP Header Insertion processing loops
-	int sock = socket(AF_INET, SOCK_RAW, IPPROTO_RAW);
-	if (sock < 0) exit(1);
-
-	int one = 1;
-	setsockopt(sock, IPPROTO_IP, IP_HDRINCL, &one, sizeof(one));
-
-	if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, "lokitun0", 8) < 0) {
-		exit(1);
+	// Map out the 10 session specific string variables
+	const char *targets[10];
+	for (int i = 0; i < 10; i++) {
+		targets[i] = argv[i + 1];
 	}
-	struct sockaddr_in target;
-	target.sin_family = AF_INET;
 
-	unsigned int arg_check = 0;
-	FILE *f_arg = fopen("/dev/urandom", "rb");
-	if(f_arg) { if (fread(&arg_check, sizeof(arg_check), 1, f_arg) != 1) arg_check = 0; fclose(f_arg); }
+	int socks[10];
+	struct sockaddr_in sins[10];
+	int mark = 76;
 
-	target.sin_port = (strcmp(argv[1], "127.0.0.1") == 0) ? htons(5353) : htons(53);
-	target.sin_addr.s_addr = inet_addr(argv[1]);
+	for (int i = 0; i < 10; i++) {
+		socks[i] = socket(AF_INET, SOCK_STREAM, 0);
+		if (socks[i] < 0) exit(1);
+
+		setsockopt(socks[i], SOL_SOCKET, SO_MARK, &mark, sizeof(mark));
+		memset(&sins[i], 0, sizeof(sins[i]));
+		sins[i].sin_family = AF_INET;
+		sins[i].sin_port = htons(443);
+
+		struct hostent *he = gethostbyname(targets[i]);
+		if (he) {
+			memcpy(&sins[i].sin_addr, he->h_addr_list[0], he->h_length);
+		} else {
+			sins[i].sin_addr.s_addr = inet_addr(targets[i]);
+		}
+		connect(socks[i], (struct sockaddr*)&sins[i], sizeof(sins[i]));
+	}
+
+	char phys_iface[32] = {0};
+	FILE *fp = popen("/sbin/ip route | /bin/grep default | /usr/bin/awk '{print $5}' | /usr/bin/head -n1", "r");
+	if (fp) {
+		if (fgets(phys_iface, sizeof(phys_iface)-1, fp) != NULL) {
+			phys_iface[strcspn(phys_iface, "\n\r ")] = 0;
+		}
+		pclose(fp);
+	}
+
+	unsigned long long initial_tx_bytes = 0;
+	char path[256] = {0};
+	if (strlen(phys_iface) > 0) {
+		snprintf(path, sizeof(path), "/sys/class/net/%s/statistics/tx_bytes", phys_iface);
+		FILE *f_tx = fopen(path, "r");
+		if (f_tx) {
+			if (fscanf(f_tx, "%llu", &initial_tx_bytes) != 1) initial_tx_bytes = 0;
+			fclose(f_tx);
+		}
+	}
+
+	unsigned long long total_bytes_sent = 0;
+	struct timespec session_start;
+	clock_gettime(CLOCK_MONOTONIC, &session_start);
 
 	while(1) {
-		inject_entropy_pulse(sock, &target);
+		unsigned char r_idx = 0;
+		FILE *f_ri = fopen("/dev/urandom", "rb");
+		if (f_ri) { if (fread(&r_idx, 1, 1, f_ri) != 1) r_idx = 0; fclose(f_ri); }
+		int idx = r_idx % 10;
+
+		// FIX APPLIED HERE: Always inject the pulse regardless of historical tracking checks
+		inject_entropy_pulse(&socks[idx], &sins[idx], mark);
+		total_bytes_sent += 104;
+
 		struct timespec ts;
 
 		// Enforce continuous Loopix Poisson processing interval loops
@@ -127,6 +180,7 @@ int main(int argc, char *argv[]) {
 		ts.tv_sec = (long)poisson_interval;
 		ts.tv_nsec = (long)((poisson_interval - ts.tv_sec) * 1000000000.0) % 1000000000L;
 
+		// FIX APPLIED HERE: Unconditionally sleep using the Poisson interval without dropping out to zero pacing
 		nanosleep(&ts, NULL);
 	}
 	return 0;
