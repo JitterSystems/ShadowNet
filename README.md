@@ -1,6 +1,6 @@
 Big Thanks to Jesus for making this gain attention! Turn to Jesus before it's too late. :) He loves You
 
-🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Lokinet + Mixnet Techniques)
+🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Mixnet Techniques)
 
 No longer rely on blending in a crowd to be anonymous like regular tor, NOW BEING UNIQUE IS THE TRUE ANONYMITY!
 
@@ -22,7 +22,7 @@ Asynchronous Obfuscation Layer:
 ShadowNet is an advanced network hardening framework that transforms a standard workstation into a "Private Mixnet of One." By forcing all system traffic through a synchronous, timing-obfuscated, and size-uniform tunnel, it eliminates the behavioral metadata that state-level adversaries use to deanonymize users.
 🛡️ Core Evolutionary Features
 
-ShadowNet forces all system-wide traffic through Lokinet while implementing a cover traffic and utilizing Mixnet-like techniques.
+ShadowNet forces all system-wide traffic through Tor while implementing Mixnet-like techniques (Inspired by Nym).
 
 
 1. Asynchronous Message Queuing (SFQ)/Jitter Randomized delay/reordering and shuffling
@@ -31,7 +31,7 @@ ShadowNet replaces standard linear packet release with Stochastic Fairness Queui
 
 The Logic: Instead of a predictable "tick-tock" delivery, packets are hashed into multiple internal "buckets" and released using a shuffling algorithm. The jitter also delays the start up connection/disconnection randomly, the NSA won't know when you just first connected to ShadowNet and when you disconnected, it's all delayed. Jitter is also applied to the cover traffic as well.
 
-The Benefit: It destroys Timing Correlation Attacks. By re-shuffling the internal order of packets every 10 seconds (perturb 10), it ensures that the rhythm of data leaving your home never matches the rhythm of data exiting a Tor node.
+The Benefit: It destroys Timing Correlation Attacks. By re-shuffling the internal order of packets every 1-4 seconds (perturb 1-4), it ensures that the rhythm of data leaving your home never matches the rhythm of data exiting a Tor node.
 
 2. Multi-Tiered Decoy Handshakes
 
@@ -54,7 +54,7 @@ the fingerprinting link)
 
 The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-6. Randomized Constant Bit Rate (CBR) Shaping (5-20mbit) (Cover Traffic) -> Sent through the Lokinet P2P Network per session
+6. Randomized Constant Bit Rate (CBR) Shaping (5-20mbit) (Cover Traffic) -> Sent through the Tor P2P Network per session
 
 ShadowNet maintains a disciplined 5-20mbit pulse regardless of your actual activity. You are assigned a fixed one for each session.
 
