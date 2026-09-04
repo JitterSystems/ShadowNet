@@ -19,9 +19,13 @@ int safe_execute(const char *cmd_string) {
 	pid_t pid = fork();
 	if (pid == 0) {
 		char *args[] = {"/bin/sh", "-c", (char *)cmd_string, NULL};
-		// Using execve for maximum control over environment isolation
-		extern char **environ;
-		execve("/bin/sh", args, environ);
+		// Using execve for maximum control over environment isolation and purging LD_PRELOAD vectors
+		char *safe_env[] = {
+			"PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+			"SHADOWNET_PROC=true",
+			NULL
+		};
+		execve("/bin/sh", args, safe_env);
 		_exit(127);
 	} else if (pid > 0) {
 		int status;
@@ -177,7 +181,13 @@ void stop_shadownet() {
 	safe_execute(cmd);
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s mtu 1500", int_if);
 	safe_execute(cmd);
+
+	// Restore resolv.conf attributes and file contents securely
+	safe_execute("sudo chattr -i /etc/resolv.conf 2>/dev/null");
 	safe_execute("if [ -f /dev/shm/resolv.conf.shadownet_bak ]; then rm -f /etc/resolv.conf; mv /dev/shm/resolv.conf.shadownet_bak /etc/resolv.conf; fi");
+
+	// Restore standard procfs mount options (hidepid=0)
+	safe_execute("sudo mount -o remount,rw,hidepid=0 /proc 2>/dev/null");
 
 	// Substituted internal inline bash script logic with absolute C-driven Loopix execution parameters
 	int restore_jitter_val = (int)(get_loopix_poisson_delay(1.0 / 5.0));
@@ -402,6 +412,9 @@ void start_shadownet() {
 	sleep(hw_iat);
 	printf("\033[1;31m[!] DHCP Hostname Scrubbing & Anonymization: ACTIVE\033[0m\n");
 
+	// Enforce strict Procfs Process Visibility Isolation (hidepid=2)
+	safe_execute("sudo mount -o remount,rw,hidepid=2 /proc 2>/dev/null");
+
 	char cmd[2048];
 	signal(SIGINT, handle_sigint);
 	if (access("./heartbeat.c", F_OK) == -1 || access("./shadownet_engine.c", F_OK) == -1) {
@@ -596,10 +609,10 @@ void start_shadownet() {
 
 	int netem_delay = (int)(get_loopix_poisson_delay(1.0 / 15.0));
 	int netem_jitter = (int)(get_loopix_poisson_delay(1.0 / 10.0));
-	int sfq_perturb = (int)(get_loopix_poisson_delay(1.0 / 5.0));
+	int sfq_perturb = 1; // Enforced strict 1 second SFQ perturb
+
 	if (netem_delay < 1) netem_delay = 15;
 	if (netem_jitter < 1) netem_jitter = 10;
-	if (sfq_perturb < 1) sfq_perturb = 1;
 
 	snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s root handle 1: htb default 10; "
 	"sudo tc class add dev %.16s parent 1: classid 1:1 htb rate %dmbit ceil %dmbit quantum 65000; "
@@ -621,7 +634,11 @@ void start_shadownet() {
 	int dns_jitter = get_entropy_delay(1, 5);
 	printf("\033[1;33m[*] Applying Loopix Cascade DNS Delay: %ds...\033[0m\n", dns_jitter);
 	sleep(dns_jitter);
+
+	// SEAL DNS LEAK VECTOR AT SOCKET LAYER & APPLY IMMUTABILITY (+i LOCK)
+	safe_execute("sudo chattr -i /etc/resolv.conf 2>/dev/null");
 	safe_execute("echo 'nameserver 127.0.0.1' > /etc/resolv.conf");
+	safe_execute("sudo chattr +i /etc/resolv.conf");
 
 	// RESTRICTIVE FIREWALL LAYER: Rebuilt to guarantee Tor-only clearance out of the physical gateway
 	safe_execute("nft flush chain inet shadownet input; nft flush chain inet shadownet forward; nft flush chain inet shadownet output");
