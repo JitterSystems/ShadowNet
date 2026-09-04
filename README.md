@@ -12,7 +12,7 @@ chmod +x 777 *
 
 sudo bash setup.sh
 
-gcc shadownet.c -o shadownet -lm
+gcc -strict shadownet.c -o shadownet -lm
 
 sudo ./shadownet (start/stop)
 
