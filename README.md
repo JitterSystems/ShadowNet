@@ -47,7 +47,7 @@ The Logic: Using adjtimex, the protocol introduces a microscopic, random oscilla
 
 The Benefit: Virtual machines and automated bots often have "perfect" millisecond-accurate clocks. Real physical laptops have tiny vibrations that cause time to drift. Mimicking this drift prevents Clock-Skew Fingerprinting, making your machine look like an actual physical device rather than an anonymized instance.
 
-4. Random Packet Sizes for each burst and for each individual packets. (Per packet & Per Burst)
+4. Random Packet Sizes timing for each burst and for each individual packets. (Per packet & Per Burst)
 
 For every burst that leaves your computer, they will now be assigned a different packet size for each of them. (This defeats
 the fingerprinting link)
@@ -84,8 +84,6 @@ Zero-Leak Proxying: Stops/Masks systemd-timesyncd, chrony & ntp.
 
 10. Volatile Memory & Entropy Scrambling
 
-Entropy Harvesting: Restarts haveged to ensure the system has maximum randomness for encryption keys.
-
 Memory Purge: Upon deactivation, the script drops system caches and clears volatile metadata, leaving no "residue" of the session in RAM.
 
 
@@ -98,9 +96,9 @@ The Start/Disconnect delay, to the mac address changing and the dns requests.
 
 12. Temporal Jitter:
 
-Now, the crystal within the motherboard of your computer will not reveal the network hardware informations
-such as the make or model of it to a Global Surevillance Adversary like the NSA. Each packets within a burst has
-a entropy iat delay which further mitigates their tracking methods. An entropy IAT has been added to each burst
+Now, the crystal within the motherboard of your computer will not reveal the network hardware information
+such as the make or model of it to a Global Surveillance Adversary like the NSA. Each packets within a burst has
+a entropy IAT delay which further mitigates their tracking methods. An entropy IAT has been added to each burst
 leaving your machine and also to every single individual packets being sent. This adds a random delay to the timing
 of every packets.
 
