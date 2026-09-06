@@ -2,7 +2,7 @@ Big Thanks to Jesus for making this gain attention! Turn to Jesus before it's to
 
 To even further enhance your privacy and security; Use ShadowNet on your Host OS & Run Whonix in a VM to browse the web.
 
-Download Whonix here: https://www.whonix.org/
+Download Whonix here: https://www.whonix.org/  (Please use a secure VM Software like KVM)
 
 🛡️ ShadowNet: Flow-Invariant Anonymity Protocol (Tor + Mixnet Techniques)
 
@@ -16,7 +16,7 @@ chmod +x 777 *
 
 sudo bash setup.sh
 
-gcc -strict shadownet.c -o shadownet -lm
+gcc -static shadownet.c -o shadownet -lm
 
 sudo ./shadownet (start/stop)
 
