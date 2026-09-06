@@ -100,7 +100,7 @@ int get_true_5050() {
 		}
 		fclose(f);
 	}
-	return rand_val % 2; // Fixed: Swapped fallback out of standard rand() to urandom value
+	return rand_val % 2;
 }
 
 void execute_14_tier_sanitation(const char *name) {
@@ -108,7 +108,6 @@ void execute_14_tier_sanitation(const char *name) {
 	char short_name[16];
 	strncpy(short_name, name, 15);
 	short_name[15] = '\0';
-	// Replaced sprintf with snprintf
 	snprintf(cmd, sizeof(cmd), "[ -f /dev/shm/shadownet_%1$s.pid ] && PID=$(cat /dev/shm/shadownet_%1$s.pid) && [ -d /proc/$PID ] && sudo kill -9 $PID 2>/dev/null; "
 	"MATCHES=$(ps -ef | grep '%1$s' | grep -v grep | awk '{print $2}'); for m_pid in $MATCHES; do sudo kill -9 $m_pid 2>/dev/null; done; "
 	"sudo fuser -k -9 '%1$s' 2>/dev/null; "
@@ -129,7 +128,6 @@ void execute_14_tier_sanitation(const char *name) {
 }
 
 void trigger_emergency_lockdown() {
-	// XDP Map Toggle 1ms Killswitch implementation hook
 	safe_execute("sudo bpftool map update pinned /sys/fs/bpf/shadownet_lockdown_map key 0 0 0 0 value 1 0 0 0 2>/dev/null");
 	safe_execute("nft flush ruleset");
 	safe_execute("nft add table inet shadownet");
@@ -154,12 +152,19 @@ void stop_shadownet() {
 	safe_execute("nft add table inet shadownet");
 	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy drop \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy drop \\; }");
 	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy drop \\; }");
-	int exit_dns_jitter = get_entropy_delay(2, 8);
+
+	int exit_dns_jitter = (int)get_loopix_poisson_delay(0.25);
+	if (exit_dns_jitter < 2) exit_dns_jitter = 2;
+	if (exit_dns_jitter > 8) exit_dns_jitter = 8;
 	printf("\033[1;31m[*] Pending exit... Applying Exit DNS Entropy: %ds...\033[0m\n", exit_dns_jitter);
 	sleep(exit_dns_jitter);
-	int wait_time = get_entropy_delay(5, 60);
+
+	int wait_time = (int)get_loopix_poisson_delay(0.05);
+	if (wait_time < 5) wait_time = 5;
+	if (wait_time > 60) wait_time = 60;
 	printf("\033[1;31m[*] Finalizing teardown... Waiting %d seconds.\033[0m\n", wait_time);
 	sleep(wait_time);
+
 	safe_execute("sudo systemctl unmask chrony ntp systemd-timesyncd 2>/dev/null");
 	safe_execute("sudo systemctl start chrony ntp systemd-timesyncd 2>/dev/null");
 	execute_14_tier_sanitation("heartbeat");
@@ -176,20 +181,15 @@ void stop_shadownet() {
 	safe_execute("sudo sysctl -w net.ipv4.ip_no_pmtu_disc=0 >/dev/null");
 	safe_execute("sudo adjtimex -t 10000 >/dev/null 2>&1");
 	char cmd[512];
-	// Replaced sprintf with snprintf
 	snprintf(cmd, sizeof(cmd), "sudo tc qdisc del dev %.16s root 2>/dev/null", int_if);
 	safe_execute(cmd);
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s mtu 1500", int_if);
 	safe_execute(cmd);
 
-	// Restore resolv.conf attributes and file contents securely
 	safe_execute("sudo chattr -i /etc/resolv.conf 2>/dev/null");
 	safe_execute("if [ -f /dev/shm/resolv.conf.shadownet_bak ]; then rm -f /etc/resolv.conf; mv /dev/shm/resolv.conf.shadownet_bak /etc/resolv.conf; fi");
-
-	// Restore standard procfs mount options (hidepid=0)
 	safe_execute("sudo mount -o remount,rw,hidepid=0 /proc 2>/dev/null");
 
-	// Substituted internal inline bash script logic with absolute C-driven Loopix execution parameters
 	int restore_jitter_val = (int)(get_loopix_poisson_delay(1.0 / 5.0));
 	if (restore_jitter_val < 2) restore_jitter_val = 2;
 	if (restore_jitter_val > 15) restore_jitter_val = 15;
@@ -211,7 +211,6 @@ void stop_shadownet() {
 	safe_execute("systemctl restart NetworkManager");
 	safe_execute("sudo systemctl unmask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
 
-	// Clean up XDP killswitch attachments (FIXED: Formatted into buffer before calling safe_execute)
 	char xdp_off_cmd[256];
 	snprintf(xdp_off_cmd, sizeof(xdp_off_cmd), "sudo ip link set dev %.16s xdp off 2>/dev/null", int_if);
 	safe_execute(xdp_off_cmd);
@@ -220,10 +219,6 @@ void stop_shadownet() {
 	printf("\n\033[1;31m[-] ShadowNet Deactivated. Integrity Restored | Co Authored By JS / ASA.\033[0m\n");
 }
 
-/* eBPP Entropy Helper Function
- * Performs advanced /dev/urandom structural scrambling on local address space routing,
- * custom protocol headers, and handles high-resolution sub-second entropy timing delays.
- */
 void ebpp_entropy_scramble(char *rand_dest_ip, char *rand_src_ip, int *tos_val) {
 	unsigned char stream[8];
 	struct timespec ns_jitter;
@@ -236,20 +231,16 @@ void ebpp_entropy_scramble(char *rand_dest_ip, char *rand_src_ip, int *tos_val) 
 	} else {
 		for (int i = 0; i < 8; i++) stream[i] = 127;
 	}
-	// Fully dynamic loopback sub-address variations (127.b2.b3.b4)
 	int b2_d = (stream[0] % 254) + 1;
 	int b3_d = (stream[1] % 254) + 1;
 	int b4_d = (stream[2] % 254) + 1;
 	snprintf(rand_dest_ip, 64, "127.%d.%d.%d", b2_d, b3_d, b4_d);
-	// Advanced Local Subnet Masking Scramble (127.b2.b3.b4 source alias)
 	int b2_s = (stream[3] % 254) + 1;
 	int b3_s = (stream[4] % 254) + 1;
 	int b4_s = (stream[5] % 254) + 1;
 	snprintf(rand_src_ip, 64, "127.%d.%d.%d", b2_s, b3_s, b4_s);
-	// Randomize Type of Service (ToS) / Differentiated Services Field
 	*tos_val = stream[6];
 
-	// Refactored to map high-resolution sub-second delays completely to an exponential Loopix scale
 	double u_ebpp = (double)((stream[7] << 8) | stream[5]) / 65535.0;
 	if (u_ebpp <= 0.0) u_ebpp = 0.000001;
 	double delay_ebpp = -log(u_ebpp) * 400000.0;
@@ -262,7 +253,6 @@ void start_shadownet() {
 	char int_if[32] = {0};
 	get_interface(int_if);
 
-	// Expanded destination index layout to exactly 100 target options (excluding .gov and banking)
 	const char *session_domains[] = {
 		"duckduckgo.com", "google.com", "startpage.com", "wikipedia.org",
 		"mozilla.org", "debian.org", "kernel.org", "github.com",
@@ -291,7 +281,6 @@ void start_shadownet() {
 		"nationalgeographic.com", "smithsonianmag.com", "ted.com", "khanacademy.org"
 	};
 
-	// Draw 10 completely unique destination indices from the pool using /dev/urandom entropy
 	int selected_indices[10];
 	FILE *f_dom = fopen("/dev/urandom", "rb");
 	if (f_dom) {
@@ -301,7 +290,7 @@ void start_shadownet() {
 			selected_indices[i] = b % 100;
 			for (int j = 0; j < i; j++) {
 				if (selected_indices[i] == selected_indices[j]) {
-					i--; // Recalculate duplicates to guarantee structural uniqueness
+					i--;
 					break;
 				}
 			}
@@ -311,108 +300,151 @@ void start_shadownet() {
 		for(int i = 0; i < 10; i++) selected_indices[i] = i;
 	}
 
-	// LEAK PREVENTION GUARDRAIL: Instant absolute drop state applied immediately before background initialization
 	safe_execute("nft flush ruleset");
 	safe_execute("nft add table inet shadownet");
 	safe_execute("nft add chain inet shadownet input { type filter hook input priority 0 \\; policy drop \\; }; nft add chain inet shadownet forward { type filter hook forward priority 0 \\; policy drop \\; }");
 	safe_execute("nft add chain inet shadownet output { type filter hook output priority 0 \\; policy drop \\; }");
 	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
 
-	// Seed localized safe interface pass rule specifically for the Tor process lifecycle bootstrap stage
 	char init_tor_pass[256];
 	snprintf(init_tor_pass, sizeof(init_tor_pass), "TOR_UID=$(id -u debian-tor); [ -n \"$TOR_UID\" ] && nft add rule inet shadownet output oifname \"%.16s\" skuid $TOR_UID accept", int_if);
 	safe_execute(init_tor_pass);
 
 	int alias_roll = 1;
 	int fixed_mtu = 1400;
-	int fixed_payload_size = get_entropy_delay(500, fixed_mtu - 42);
-	int start_iat_jitter = get_entropy_delay(5, 20);
+
+	int fixed_payload_size = (int)get_loopix_poisson_delay(0.002);
+	if (fixed_payload_size < 500) fixed_payload_size = 500;
+	if (fixed_payload_size > fixed_mtu - 42) fixed_payload_size = fixed_mtu - 42;
+
+	int start_iat_jitter = (int)get_loopix_poisson_delay(0.1);
+	if (start_iat_jitter < 5) start_iat_jitter = 5;
+	if (start_iat_jitter > 20) start_iat_jitter = 20;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before starting ShadowNet...\033[0m\n", start_iat_jitter);
 	sleep(start_iat_jitter);
+
 	int hw_iat;
-	hw_iat = get_entropy_delay(2, 5);
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Bluetooth...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo rfkill block bluetooth 2>/dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after disabling Bluetooth...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] Bluetooth Hardware: DISABLED\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Audio/Microphone...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo fuser -k /dev/snd/* >/dev/null 2>&1; sudo modprobe -r snd_hda_intel snd_usb_audio 2>/dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after disabling Audio/Microphone...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] Internal/External Microphone: DISABLED\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Camera/Webcam...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo fuser -k /dev/video* >/dev/null 2>&1; sudo modprobe -r uvcvideo 2>/dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after disabling Camera/Webcam...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] Internal/External Webcam: DISABLED\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Motion Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo modprobe -r hid_sensor_accel_3d hid_sensor_gyro_3d hid_sensor_hub 2>/dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after disabling Motion Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] Gyroscopes and Accelerometers: DISABLED\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Light Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo modprobe -r hid_sensor_als 2>/dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after disabling Light Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] Ambient Light Sensors: DISABLED\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Thermal Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo modprobe -r intel_rapl_msr intel_rapl_common processor_thermal_device_pci_legacy thermal 2>/dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Thermal Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] Thermal Sensors: DISABLED\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before TEMPEST Mitigation...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo sysctl -w kernel.randomize_va_space=2 >/dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after TEMPEST Mitigation...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] Electromagnetic Interference (TEMPEST) Shielded.\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before BIOS Hardening...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo chattr +i /sys/firmware/efi/efivars/* 2>/dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after BIOS Hardening...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] BIOS/Firmware Immutable Protection: ACTIVE\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before Power Randomization...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo cpupower frequency-set -g powersave >/dev/null 2>&1");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Power Randomization...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] Power Supply Side-Channel & Entropy Randomization: ACTIVE\033[0m\n");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before DHCP/Hostname Scrubbing...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	safe_execute("sudo hostnamectl set-hostname 'localhost'");
 	safe_execute("printf '[main]\\ndhcp=dhclient\\n\\n[ifupdown]\\nmanaged=false\\n' | sudo tee /etc/NetworkManager/conf.d/dhcp-anon.conf > /dev/null");
-	hw_iat = get_entropy_delay(2, 5);
+
+	hw_iat = (int)get_loopix_poisson_delay(0.3);
+	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after DHCP/Hostname Scrubbing...\033[0m\n", hw_iat);
 	sleep(hw_iat);
 	printf("\033[1;31m[!] DHCP Hostname Scrubbing & Anonymization: ACTIVE\033[0m\n");
 
-	// Enforce strict Procfs Process Visibility Isolation (hidepid=2)
 	safe_execute("sudo mount -o remount,rw,hidepid=2 /proc 2>/dev/null");
 
 	char cmd[2048];
@@ -421,7 +453,12 @@ void start_shadownet() {
 		printf("\033[0;31m[!] CRITICAL: heartbeat.c or shadownet_engine.c missing. Aborting.\033[0m\n");
 		exit(1);
 	}
-	int target_mbit = get_entropy_delay(5, 20);
+
+	// CHANGED: Randomized between 100kbps (0.1mbit) and 5000kbps (5mbit) via Loopix Poisson entropy
+	int target_kbps = (int)(get_loopix_poisson_delay(0.0005) * 1000.0) % 4901 + 100;
+	if (target_kbps < 100) target_kbps = 100;
+	if (target_kbps > 5000) target_kbps = 5000;
+
 	printf("\033[1;30m[*] Executing 14-Tier Process Sanitation & Guarding...\033[0m\n");
 	execute_14_tier_sanitation("heartbeat");
 	execute_14_tier_sanitation("shadownet_engine");
@@ -437,9 +474,13 @@ void start_shadownet() {
 	safe_execute(cmd);
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s down", int_if);
 	safe_execute(cmd);
-	int mac_shift_jitter = get_entropy_delay(3, 15);
+
+	int mac_shift_jitter = (int)get_loopix_poisson_delay(0.1);
+	if (mac_shift_jitter < 3) mac_shift_jitter = 3;
+	if (mac_shift_jitter > 15) mac_shift_jitter = 15;
 	printf("\033[1;33m[*] Applying Identity Entropy: %ds before shift...\033[0m\n", mac_shift_jitter);
 	sleep(mac_shift_jitter);
+
 	snprintf(cmd, sizeof(cmd), "sudo macchanger -r %.16s", int_if);
 	safe_execute(cmd);
 
@@ -448,11 +489,13 @@ void start_shadownet() {
 	safe_execute("sudo sysctl -w net.ipv4.ip_no_pmtu_disc=1 >/dev/null");
 	snprintf(cmd, sizeof(cmd), "sudo ip link set %.16s up", int_if);
 	safe_execute(cmd);
-	int post_mac_jitter = get_entropy_delay(15, 60);
+
+	int post_mac_jitter = (int)get_loopix_poisson_delay(0.03);
+	if (post_mac_jitter < 15) post_mac_jitter = 15;
+	if (post_mac_jitter > 60) post_mac_jitter = 60;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Identity Shift...\033[0m\n", post_mac_jitter);
 	sleep(post_mac_jitter);
 
-	// FIXED: Modified flag hierarchy sequence ordering to process library links securely ahead of the error null filter
 	safe_execute("cp ./heartbeat.c /dev/shm/heartbeat.c 2>/dev/null; gcc /dev/shm/heartbeat.c -o /dev/shm/heartbeat -lm 2>/dev/null; "
 	"gcc ./shadownet_engine.c -o /dev/shm/shadownet_engine -lm 2>/dev/null");
 	if (access("/dev/shm/shadownet_engine", F_OK) == -1 || access("/dev/shm/heartbeat", F_OK) == -1) {
@@ -461,20 +504,22 @@ void start_shadownet() {
 		exit(1);
 	}
 	setenv("SHADOWNET_PROC", "true", 1);
-	// Implement eBPP IP header and destination /dev/urandom entropy IAT delay and randomization completely
+
 	char rand_dest_ip[64];
 	char rand_src_ip[64];
 	int ebpp_tos_val = 0;
-	// Call helper to enforce structural eBPP parameters, source/dest modification, and structural sub-second timing delay
 	ebpp_entropy_scramble(rand_dest_ip, rand_src_ip, &ebpp_tos_val);
-	int dest_iat_delay = get_entropy_delay(1, 4);
+
+	int dest_iat_delay = (int)get_loopix_poisson_delay(0.5);
+	if (dest_iat_delay < 1) dest_iat_delay = 1;
+	if (dest_iat_delay > 4) dest_iat_delay = 4;
 	printf("\033[1;33m[*] Applying Destination Entropy IAT: %ds...\033[0m\n", dest_iat_delay);
 	sleep(dest_iat_delay);
+
 	char ebpp_tos_str[16];
 	snprintf(ebpp_tos_str, sizeof(ebpp_tos_str), "%d", ebpp_tos_val);
 	setenv("EBPP_IP_HEADER_TOS", ebpp_tos_str, 1);
 
-	// Display the 10 randomly assigned targets for the active session
 	printf("\033[1;32m[+] Session Parallel Targets Assigned | Co Authored By JS / ASA:\033[0m\n");
 	for (int i = 0; i < 10; i++) {
 		printf("\033[1;32m    [%d] %s\033[0m\n", i + 1, session_domains[selected_indices[i]]);
@@ -485,7 +530,7 @@ void start_shadownet() {
 			 session_domains[selected_indices[0]], session_domains[selected_indices[1]], session_domains[selected_indices[2]], session_domains[selected_indices[3]], session_domains[selected_indices[4]],
 		  session_domains[selected_indices[5]], session_domains[selected_indices[6]], session_domains[selected_indices[7]], session_domains[selected_indices[8]], session_domains[selected_indices[9]]);
 	safe_execute(engine_cmd_buf);
-	snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d %d %d %s %s %s %s %s %s %s %s %s %s > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_mbit, alias_roll, fixed_payload_size,
+	snprintf(cmd, sizeof(cmd), "sudo nice -n -20 nohup /dev/shm/heartbeat %d %d %d %d %s %s %s %s %s %s %s %s %s %s > /dev/null 2>&1 & echo $! > /dev/shm/shadownet_heartbeat.pid", fixed_mtu, target_kbps, alias_roll, fixed_payload_size,
 			 session_domains[selected_indices[0]], session_domains[selected_indices[1]], session_domains[selected_indices[2]], session_domains[selected_indices[3]], session_domains[selected_indices[4]],
 		  session_domains[selected_indices[5]], session_domains[selected_indices[6]], session_domains[selected_indices[7]], session_domains[selected_indices[8]], session_domains[selected_indices[9]]);
 	safe_execute(cmd);
@@ -493,12 +538,10 @@ void start_shadownet() {
 	snprintf(ebpp_mangle_cmd, sizeof(ebpp_mangle_cmd), "sudo nft add rule inet shadownet output oifname \"%.16s\" ip tos set %d 2>/dev/null", int_if, ebpp_tos_val);
 	safe_execute(ebpp_mangle_cmd);
 
-	// Enforcing Loopix Poisson Persona configurations dynamically through random choice from /dev/urandom
 	unsigned char urand_roll = 0;
 	FILE *f_roll = fopen("/dev/urandom", "rb");
 	if (f_roll) { fread(&urand_roll, 1, 1, f_roll); fclose(f_roll); }
 
-	// Refactored raw non-loopix fallback delays to explicit Loopix distributions
 	double p_delay_tor = get_loopix_poisson_delay(0.5);
 	sleep((unsigned int)(p_delay_tor < 1.0 ? 1 : p_delay_tor));
 
@@ -513,7 +556,11 @@ void start_shadownet() {
 	snprintf(cmd, sizeof(cmd), "sudo ethtool -K %.16s gso off gro off tso off 2>/dev/null", int_if);
 	safe_execute(cmd);
 	safe_execute("sudo systemctl mask sleep.target suspend.target hibernate.target hybrid-sleep.target >/dev/null 2>&1");
-	int tx_power = get_entropy_delay(8, 20);
+
+	int tx_power = (int)get_loopix_poisson_delay(0.1);
+	if (tx_power < 8) tx_power = 8;
+	if (tx_power > 20) tx_power = 20;
+
 	snprintf(cmd, sizeof(cmd), "sudo iw dev %.16s set txpower limit %d00 2>/dev/null", int_if, tx_power);
 	safe_execute(cmd);
 	printf("\033[1;36m[*] Permanently disabling IPv6 at Kernel and Sysctl layers...\033[0m\n");
@@ -521,13 +568,16 @@ void start_shadownet() {
 	"echo 'net.ipv6.conf.default.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
 	"echo 'net.ipv6.conf.lo.disable_ipv6 = 1' | sudo tee -a /etc/sysctl.conf >/dev/null; "
 	"sudo sysctl -p >/dev/null 2>&1");
-	int pre_adj_jitter = get_entropy_delay(5, 15);
+
+	int pre_adj_jitter = (int)get_loopix_poisson_delay(0.1);
+	if (pre_adj_jitter < 5) pre_adj_jitter = 5;
+	if (pre_adj_jitter > 15) pre_adj_jitter = 15;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before Temporal Drift Adjustment...\033[0m\n", pre_adj_jitter);
 	sleep(pre_adj_jitter);
+
 	int last_tick = 0;
-	FILE *f_tick = fopen("/dev/shm/shadownet_tick.last", "w+"); // Keeping matching open flags
+	FILE *f_tick = fopen("/dev/shm/shadownet_tick.last", "w+");
 	if (f_tick) {
-		// Matching read logic safely retained
 		fclose(f_tick);
 	}
 	f_tick = fopen("/dev/shm/shadownet_tick.last", "r");
@@ -537,39 +587,60 @@ void start_shadownet() {
 	}
 	int assigned_tick;
 	do {
-		assigned_tick = get_entropy_delay(9900, 10100);
+		double poisson_tick_offset = get_loopix_poisson_delay(0.0001);
+		assigned_tick = 9000 + (int)(poisson_tick_offset) % 2000;
+		if (assigned_tick < 9000) assigned_tick = 9000;
+		if (assigned_tick > 11000) assigned_tick = 11000;
 	} while (assigned_tick == last_tick);
-	f_tick = fopen("/dev/shm/shadownet_tick.last", "w");
-	if (f_tick) {
-		fprintf(f_tick, "%d", assigned_tick);
-		fclose(f_tick);
-	}
-	snprintf(cmd, sizeof(cmd), "sudo adjtimex -t %d >/dev/null 2>&1", assigned_tick);
-	safe_execute(cmd);
-	printf("\033[1;35m[+] Temporal Entropy Engaged: Clock Tick assigned to %d.\033[0m\n", assigned_tick);
-	int post_adj_jitter = get_entropy_delay(5, 15);
-	printf("\033[1;33m[*] Applying Entropy IAT: %ds after Temporal Drift Adjustment...\033[0m\n", post_adj_jitter);
+
+		f_tick = fopen("/dev/shm/shadownet_tick.last", "w");
+		if (f_tick) {
+			fprintf(f_tick, "%d", assigned_tick);
+			fclose(f_tick);
+		}
+		snprintf(cmd, sizeof(cmd), "sudo adjtimex -t %d >/dev/null 2>&1", assigned_tick);
+		safe_execute(cmd);
+		printf("\033[1;35m[+] Temporal Entropy Engaged: Clock Tick assigned to %d.\033[0m\n", assigned_tick);
+
+		int post_adj_jitter = (int)get_loopix_poisson_delay(0.1);
+		if (post_adj_jitter < 5) post_adj_jitter = 5;
+		if (post_adj_jitter > 15) post_adj_jitter = 15;
+		printf("\033[1;33m[*] Applying Entropy IAT: %ds after Temporal Drift Adjustment...\033[0m\n", post_adj_jitter);
 	sleep(post_adj_jitter);
+
 	printf("\033[1;36m[*] Hardening Regulatory Domain & GRUB Configuration...\033[0m\n");
 	safe_execute("if ! grep -q 'cfg80211.cfg80211_disable_reg_hint=1' /etc/default/grub; then "
 	"sudo sed -i 's/GRUB_CMDLINE_LINUX_DEFAULT=\"\\([^\"]*\\)\"/GRUB_CMDLINE_LINUX_DEFAULT=\"\\1 cfg80211.cfg80211_disable_reg_hint=1\"/' /etc/default/grub; "
 	"sudo update-grub; fi");
 	safe_execute("sudo iw reg set US 2>/dev/null || sudo iw reg set CA 2>/dev/null");
 	printf("\033[1;32m[+] Session Identity Assigned: Alias-Fixed (Assigned Cover Packet Size: %d bytes)\033[0m\n", fixed_payload_size + 42);
-	printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at %dMbit in RAM) | Co Authored By JS / ASA.\033[0m\n", target_mbit);
-	printf("\033[1;32m[+] Packet Max MTU Size: %d bytes | Target Rate: %d Mbit.\033[0m\n", fixed_mtu, target_mbit);
-	int pre_phase1_jitter = get_entropy_delay(5, 45);
+	printf("\033[0;32m[+] Identity Shifted. Cover Traffic & Temporal Jitter Engaged (Locked at %dkbps in RAM) | Co Authored By JS / ASA.\033[0m\n", target_kbps);
+	printf("\033[1;32m[+] Packet Max MTU Size: %d bytes | Target Rate: %d kbps.\033[0m\n", fixed_mtu, target_kbps);
+
+	int pre_phase1_jitter = (int)get_loopix_poisson_delay(0.05);
+	if (pre_phase1_jitter < 5) pre_phase1_jitter = 5;
+	if (pre_phase1_jitter > 45) pre_phase1_jitter = 45;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before Tier 1 access...\033[0m\n", pre_phase1_jitter);
 	sleep(pre_phase1_jitter);
-	int phase1_wait = get_entropy_delay(10, 30);
+
+	int phase1_wait = (int)get_loopix_poisson_delay(0.05);
+	if (phase1_wait < 10) phase1_wait = 10;
+	if (phase1_wait > 30) phase1_wait = 30;
 	printf("\033[1;34m[*] Phase 1: Establishing Entry Tier (Nodes 1-3). Applying Jitter: %ds...\033[0m\n", phase1_wait);
 	sleep(phase1_wait);
-	int pre_phase2_jitter = get_entropy_delay(10, 30);
+
+	int pre_phase2_jitter = (int)get_loopix_poisson_delay(0.05);
+	if (pre_phase2_jitter < 10) pre_phase2_jitter = 10;
+	if (pre_phase2_jitter > 30) pre_phase2_jitter = 30;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before Tier 4 transition...\033[0m\n", pre_phase2_jitter);
 	sleep(pre_phase2_jitter);
-	int phase2_wait = get_entropy_delay(15, 45);
+
+	int phase2_wait = (int)get_loopix_poisson_delay(0.03);
+	if (phase2_wait < 15) phase2_wait = 15;
+	if (phase2_wait > 45) phase2_wait = 45;
 	printf("\033[1;35m[*] Phase 2: Extending to Exit Tier (Nodes 4-6). Applying Entropy IAT: %ds...\033[0m\n", phase2_wait);
 	sleep(phase2_wait);
+
 	printf("\033[0;32m[+] 6-Hop Chain Established. Initializing ShadowNet Routing Protocol...\033[0m\n");
 	safe_execute("sudo sysctl -w net.ipv4.ip_forward=1 >/dev/null; "
 	"sudo sysctl -w net.ipv4.ip_default_ttl=128 >/dev/null; "
@@ -597,7 +668,6 @@ void start_shadownet() {
 	"sudo chown debian-tor:debian-tor /etc/tor/torrc; "
 	"systemctl restart tor@default;");
 
-	// Refactored standard usleep steps and network emulator properties into strict Loopix parameters
 	double p_delay_us1 = get_loopix_poisson_delay(5.0);
 	usleep((useconds_t)(p_delay_us1 * 1000000.0));
 
@@ -607,19 +677,17 @@ void start_shadownet() {
 	double p_delay_us2 = get_loopix_poisson_delay(5.0);
 	usleep((useconds_t)(p_delay_us2 * 1000000.0));
 
-	int netem_delay = (int)(get_loopix_poisson_delay(1.0 / 15.0));
-	int netem_jitter = (int)(get_loopix_poisson_delay(1.0 / 10.0));
-	int sfq_perturb = 1; // Enforced strict 1 second SFQ perturb
+	int netem_delay = 30;
+	int netem_jitter = 20;
+	int sfq_perturb = 1;
 
-	if (netem_delay < 1) netem_delay = 15;
-	if (netem_jitter < 1) netem_jitter = 10;
-
+	// Updated rate parameters to match kbps scale cleanly for traffic shaping
 	snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s root handle 1: htb default 10; "
-	"sudo tc class add dev %.16s parent 1: classid 1:1 htb rate %dmbit ceil %dmbit quantum 65000; "
-	"sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate %dmbit ceil %dmbit burst 15k cburst 15k quantum 65000; "
+	"sudo tc class add dev %.16s parent 1: classid 1:1 htb rate %dkbit ceil %dkbit quantum 65000; "
+	"sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate %dkbit ceil %dkbit burst 15k cburst 15k quantum 65000; "
 	"sudo tc qdisc add dev %.16s parent 1:10 handle 10: netem delay %dms %dms 25%% distribution pareto reorder 100%% 50%% gap 5; "
 	"sudo tc qdisc add dev %.10s parent 10:1 handle 20: sfq perturb %d quantum 1514",
-	int_if, int_if, target_mbit, target_mbit, int_if, target_mbit, target_mbit, int_if, netem_delay, netem_jitter, int_if, sfq_perturb);
+	int_if, int_if, target_kbps, target_kbps, int_if, target_kbps, target_kbps, int_if, netem_delay, netem_jitter, int_if, sfq_perturb);
 	safe_execute(cmd);
 
 	double p_delay_us3 = get_loopix_poisson_delay(5.0);
@@ -628,32 +696,30 @@ void start_shadownet() {
 	if (access("/etc/resolv.conf", F_OK) != -1) {
 		if (safe_execute("if [ -L /etc/resolv.conf ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; rm -f /etc/resolv.conf; "
 			"elif [ ! -f /dev/shm/resolv.conf.shadownet_bak ]; then cp /etc/resolv.conf /dev/shm/resolv.conf.shadownet_bak; fi") != 0) {
-			// Catch fallthrough gracefully without execution alterations
 			}
 	}
-	int dns_jitter = get_entropy_delay(1, 5);
+
+	int dns_jitter = (int)get_loopix_poisson_delay(0.5);
+	if (dns_jitter < 1) dns_jitter = 1;
+	if (dns_jitter > 5) dns_jitter = 5;
 	printf("\033[1;33m[*] Applying Loopix Cascade DNS Delay: %ds...\033[0m\n", dns_jitter);
 	sleep(dns_jitter);
 
-	// SEAL DNS LEAK VECTOR AT SOCKET LAYER & APPLY IMMUTABILITY (+i LOCK)
 	safe_execute("sudo chattr -i /etc/resolv.conf 2>/dev/null");
 	safe_execute("echo 'nameserver 127.0.0.1' > /etc/resolv.conf");
 	safe_execute("sudo chattr +i /etc/resolv.conf");
 
-	// RESTRICTIVE FIREWALL LAYER: Rebuilt to guarantee Tor-only clearance out of the physical gateway
 	safe_execute("nft flush chain inet shadownet input; nft flush chain inet shadownet forward; nft flush chain inet shadownet output");
 	safe_execute("nft add chain inet shadownet input { policy drop \\; }; nft add chain inet shadownet forward { policy drop \\; }; nft add chain inet shadownet output { policy drop \\; }");
 	safe_execute("nft add table inet shadownet_nat; nft add chain inet shadownet_nat output { type nat hook output priority -100 \\; }");
 	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
 
-	// FIXED: Flush directives placed securely in advance of drop policy enforcement hooks
 	safe_execute("nft flush chain inet shadownet input; nft flush chain inet shadownet forward; nft flush chain inet shadownet output");
 	safe_execute("nft add chain inet shadownet input { policy drop \\; }; nft add chain inet shadownet forward { policy drop \\; }; nft add chain inet shadownet output { policy drop \\; }");
 	safe_execute("nft add rule inet shadownet input ct state established,related accept");
 	safe_execute("nft add rule inet shadownet output ct state established,related accept");
 	safe_execute("nft insert rule inet shadownet output oifname \"lo\" accept; nft insert rule inet shadownet input iifname \"lo\" accept");
 
-	// Strict Global ICMP/ICMPv6 drop protections including deep loopback filtering allocations
 	safe_execute("nft add rule inet shadownet input ip protocol icmp drop");
 	safe_execute("nft add rule inet shadownet output ip protocol icmp drop");
 	safe_execute("nft add rule inet shadownet forward ip protocol icmp drop");
@@ -691,11 +757,6 @@ void start_shadownet() {
 	printf("\033[1;31m[!] EMERGENCY KILLSWITCH ENGAGED: Realistic 100ms Guarding Active...\033[0m\n");
 	safe_execute("sudo ip route flush cache");
 
-	/* Inline eBPF Engine Generation and Deployment Hook
-	 * Compiles an inline eBPF classifier program that implements advanced /dev/urandom
-	 * entropy-based sub-second Inter-Arrival Time (IAT) delays, full context packet rerouting,
-	 * and parameter rewriting safely within the kernel workspace.
-	 */
 	printf("\033[1;36m[*] Injecting eBPF Subsystem for Core Dynamic Packet Processing & Rerouting...\033[0m\n");
 	FILE *ebpf_f = fopen("/dev/shm/shadownet_ebpf.c", "w");
 	if (ebpf_f) {
@@ -744,11 +805,11 @@ void start_shadownet() {
 		char ebpf_attach_cmd[1024];
 		snprintf(ebpf_attach_cmd, sizeof(ebpf_attach_cmd),
 				 "sudo tc qdisc add dev %.16s ingress 2>/dev/null; "
-				 "sudo tc filter add dev %.16s ingress protocol ip u32 match u32 0 0 police rate %dmbit burst 100k drop 2>/dev/null; "
+				 "sudo tc filter add dev %.16s ingress protocol ip u32 match u32 0 0 police rate %dkbit burst 100k drop 2>/dev/null; "
 				 "sudo tc filter add dev %.16s ingress bpf da obj /dev/shm/shadownet_ebpf.o sec classifier 2>/dev/null; "
 				 "sudo tc filter add dev %.16s egress bpf da obj /dev/shm/shadownet_ebpf.o sec classifier 2>/dev/null; "
 				 "sudo ip link set dev %.16s xdp obj /dev/shm/shadownet_ebpf.o sec xdp_killswitch 2>/dev/null",
-		   int_if, int_if, target_mbit, int_if, int_if, int_if);
+		   int_if, int_if, target_kbps, int_if, int_if, int_if);
 		safe_execute(ebpf_attach_cmd);
 		printf("\033[1;32m[+] eBPF Bypass Subsystem: FULLY ENGAGED & ATTACHED to %.16s hooks\033[0m\n", int_if);
 	}
@@ -756,15 +817,16 @@ void start_shadownet() {
 		char traffic_check_cmd[512];
 		struct timespec rf_iat;
 
-		// Implemented continuous Loopix Poisson decay mathematical spacing using raw urandom entropy stream
 		double p_delay = get_loopix_poisson_delay(15.0);
 		rf_iat.tv_sec = (long)p_delay;
 		rf_iat.tv_nsec = (long)((p_delay - rf_iat.tv_sec) * 1000000000.0) % 1000000000L;
 		nanosleep(&rf_iat, NULL);
 
-		int current_rf = get_entropy_delay(8, 20);
+		int current_rf = (int)get_loopix_poisson_delay(0.1);
+		if (current_rf < 8) current_rf = 8;
+		if (current_rf > 20) current_rf = 20;
+
 		char rf_cmd[256];
-		// Hardened to safely assign current_rf variable parameter
 		snprintf(rf_cmd, sizeof(rf_cmd), "sudo iw dev %s set txpower limit %d00 2>/dev/null", int_if, current_rf);
 		safe_execute(rf_cmd);
 		if (safe_execute("iw reg get | grep -q 'country GB'") == 0) {
@@ -779,7 +841,6 @@ void start_shadownet() {
 			trigger_emergency_lockdown();
 		}
 
-		// Refactored monitoring loop fallback delay to strict Loopix metric
 		double p_delay_mon = get_loopix_poisson_delay(1000.0);
 		usleep((useconds_t)(p_delay_mon * 1000000.0));
 	}
@@ -795,7 +856,6 @@ void enable_boot() {
 		char *last_slash = strrchr(dir, '/');
 		if (last_slash) *last_slash = '\0';
 		char cmd[4096];
-		// Replaced sprintf with snprintf and added string-literal single-quotes for secure executable paths
 		snprintf(cmd, sizeof(cmd), "printf '[Unit]\\nDescription=ShadowNet Service\\nAfter=network.target\\n\\n[Service]\\nType=simple\\nWorkingDirectory=\\'%s\\'\\nExecStart=\\'%s\\' start\\nExecStop=\\'%s\\' stop\\nKillMode=process\\nRemainAfterExit=yes\\n\\n[Install]\\nWantedBy=multi-user.target\\n' | sudo tee /etc/systemd/system/shadownet.service > /dev/null", dir, path, path);
 		safe_execute(cmd);
 		safe_execute("sudo systemctl daemon-reload");
