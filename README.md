@@ -58,11 +58,11 @@ the fingerprinting link)
 
 The Benefit: Every "slice" of data moving across the wire is physically identical. An observer cannot distinguish a 1KB text message from a 10MB file transfer because every packet "envelope" weighs exactly the same.
 
-6. Randomized Constant Bit Rate (CBR) Shaping (5-20mbit) (Cover Traffic) -> Sent through the Tor P2P Network per session
+6. Randomized Constant Bit Rate (CBR) Shaping (100kbps-5mbit) (Cover Traffic) -> Sent through the Tor P2P Network per session
 
-ShadowNet maintains a disciplined 5-20mbit pulse regardless of your actual activity. You are assigned a fixed one for each session.
+ShadowNet maintains a disciplined 100kbps-5mbit pulse regardless of your actual activity. You are assigned a fixed one for each session.
 
-The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 5-20mbit window.
+The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 100kbps-5mbit window.
 
 The Benefit: Your network signature remains a loopix consistent cover traffic. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
 
