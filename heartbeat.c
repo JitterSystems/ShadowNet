@@ -8,7 +8,7 @@
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
 #include <fcntl.h>
-#include <math.h> // Added for Loopix exponent mathematical models
+#include <math.h>
 #include <netdb.h>
 #include <signal.h>
 
@@ -23,7 +23,6 @@ unsigned short csum(unsigned short *ptr, int nbytes) {
 	}
 	if(nbytes == 1) {
 		oddbyte = 0;
-		// FIXED: Swapped standardless macro assignment out to standard primitive type pointer
 		*((unsigned char*)&oddbyte) = *(unsigned char*)ptr;
 		sum += oddbyte;
 	}
@@ -33,7 +32,6 @@ unsigned short csum(unsigned short *ptr, int nbytes) {
 	return answer;
 }
 
-// Loopix Helper: Replaced random calculation with exponential distribution driven by urandom
 double get_loopix_delay(double lambda) {
 	unsigned int val = 0;
 	FILE *f = fopen("/dev/urandom", "rb");
@@ -47,23 +45,22 @@ double get_loopix_delay(double lambda) {
 }
 
 double get_entropy_jitter() {
-	return get_loopix_delay(50.0); // Mathematical scale conversion mapping 0.010 - 0.050s range
+	return get_loopix_delay(50.0);
 }
 
 double get_dns_iat() {
-	return 0.5 + get_loopix_delay(0.5); // Loopix-Poisson styled interval distribution
+	return 0.5 + get_loopix_delay(0.5);
 }
 
 int main(int argc, char *argv[]) {
-	signal(SIGPIPE, SIG_IGN); // Prevent pipeline collapses during server-side TLS drop steps
+	signal(SIGPIPE, SIG_IGN);
 
 	int max_mtu = (argc > 1) ? atoi(argv[1]) : 1400;
-	int target_mbit = 10; // Modified parameter safely populated via fallback values inside parameters
-	if (argc > 2) { target_mbit = atoi(argv[2]); }
+	int target_kbps = 1000;
+	if (argc > 2) { target_kbps = atoi(argv[2]); }
 	int is_fixed = (argc > 3) ? atoi(argv[3]) : 0;
 	int is_fixed_payload = (argc > 4) ? atoi(argv[4]) : 700;
 
-	// Expanded destination parsing to hold 10 active runtime variables
 	const char *targets[10];
 	targets[0] = (argc > 5) ? argv[5] : "duckduckgo.com";
 	targets[1] = (argc > 6) ? argv[6] : "google.com";
@@ -76,7 +73,6 @@ int main(int argc, char *argv[]) {
 	targets[8] = (argc > 13) ? argv[13] : "archlinux.org";
 	targets[9] = (argc > 14) ? argv[14] : "eff.org";
 
-	// Loopix Parameter Setup: Explicit loopix padding indicator byte definitions
 	#define LOOPIX_PADDING_MARKER 0xAF
 
 	const char *destinations[] = {"127.3.2.1", "127.0.0.1"};
@@ -84,7 +80,6 @@ int main(int argc, char *argv[]) {
 	int num_dests = 2;
 	int num_domains = 5;
 
-	// Scale descriptor workspace allocations to hold 10 concurrent channels
 	int socks[10];
 	struct sockaddr_in sins[10];
 	int mark = 76;
@@ -93,7 +88,6 @@ int main(int argc, char *argv[]) {
 		socks[i] = socket(AF_INET, SOCK_STREAM, 0);
 		if(socks[i] < 0) exit(1);
 
-		// Force execution pathways explicitly through netfilter socket mark isolation
 		if (setsockopt(socks[i], SOL_SOCKET, SO_MARK, &mark, sizeof(mark)) < 0) {
 			printf("\033[0;31m[!] Error: Failed to set socket mark 76 | Co Authored By JS / ASA.\033[0m\n");
 			exit(1);
@@ -112,26 +106,6 @@ int main(int argc, char *argv[]) {
 		connect(socks[i], (struct sockaddr *)&sins[i], sizeof(sins[i]));
 	}
 
-	char phys_iface[32] = {0};
-	FILE *fp = popen("/sbin/ip route | /bin/grep default | /usr/bin/awk '{print $5}' | /usr/bin/head -n1", "r");
-	if (fp) {
-		if (fgets(phys_iface, sizeof(phys_iface)-1, fp) != NULL) {
-			phys_iface[strcspn(phys_iface, "\n\r ")] = 0;
-		}
-		pclose(fp);
-	}
-
-	unsigned long long initial_tx_bytes = 0;
-	char path[256] = {0};
-	if (strlen(phys_iface) > 0) {
-		snprintf(path, sizeof(path), "/sys/class/net/%s/statistics/tx_bytes", phys_iface);
-		FILE *f_tx = fopen(path, "r");
-		if (f_tx) {
-			if (fscanf(f_tx, "%llu", &initial_tx_bytes) != 1) initial_tx_bytes = 0;
-			fclose(f_tx);
-		}
-	}
-
 	char packet[4096];
 	struct iphdr *iph = (struct iphdr *) packet;
 	struct tcphdr *tcph = (struct tcphdr *) (packet + sizeof(struct iphdr));
@@ -141,11 +115,6 @@ int main(int argc, char *argv[]) {
 
 	struct timespec req, rem;
 	time_t last_dns_time = time(NULL);
-
-	// Adaptive Token Bucket variables to fix the throughput sizing deficit cleanly inline
-	struct timespec session_start;
-	clock_gettime(CLOCK_MONOTONIC, &session_start);
-	unsigned long long total_bytes_sent = 0;
 
 	while(1) {
 		time_t curr_time = time(NULL);
@@ -159,7 +128,6 @@ int main(int argc, char *argv[]) {
 		if(difftime(curr_time, last_dns_time) > get_dns_iat()) {
 			memset(packet, 0, 4096);
 
-			// Collect urandom entropy for header obfuscation
 			unsigned int r_ip_id = 0, r_src_ip = 0, r_tos = 0;
 			FILE *f_hdr = fopen("/dev/urandom", "rb");
 			if (f_hdr) {
@@ -177,13 +145,13 @@ int main(int argc, char *argv[]) {
 			iph->tot_len = sizeof(struct iphdr) + sizeof(struct tcphdr) + 32;
 			iph->id = htons(r_ip_id % 65535);
 			iph->frag_off = 0;
-			iph->ttl = 64 + (r_tos % 65); // Randomized TTL fingerprinting protection
+			iph->ttl = 64 + (r_tos % 65);
 			iph->protocol = IPPROTO_TCP;
 			iph->daddr = sin.sin_addr.s_addr;
 			iph->check = csum((unsigned short *) packet, iph->tot_len);
 
 			tcph->source = htons(49152 + (r_ip_id % 16383));
-			tcph->dest = htons(5353); // Standardized strictly to Tor DNSPort
+			tcph->dest = htons(5353);
 			char *dns_data = packet + sizeof(struct iphdr) + sizeof(struct tcphdr);
 			dns_data[0] = r_tos % 255; dns_data[1] = r_ip_id % 255; dns_data[2] = 0x01;
 
@@ -200,14 +168,11 @@ int main(int argc, char *argv[]) {
 				connect(socks[tgt_idx], (struct sockaddr *)&sins[tgt_idx], sizeof(sins[tgt_idx]));
 				send(socks[tgt_idx], packet, iph->tot_len, MSG_NOSIGNAL);
 			}
-			total_bytes_sent += iph->tot_len;
 			last_dns_time = curr_time;
 		}
 
 		int burst_size = 10 + (index_byte % 13);
-		int total_burst_bytes = 0;
 
-		// Loopix structural enhancement: Packet reorder array mechanism
 		int shuffle_order[32];
 		for(int i = 0; i < 32; i++) shuffle_order[i] = i;
 		FILE *f_shuf = fopen("/dev/urandom", "rb");
@@ -222,30 +187,6 @@ int main(int argc, char *argv[]) {
 				}
 			}
 			fclose(f_shuf);
-		}
-
-		// Calculate exact byte target debt based on target_mbit configuration allocation limits
-		struct timespec now;
-		clock_gettime(CLOCK_MONOTONIC, &now);
-		double elapsed = (now.tv_sec - session_start.tv_sec) + (now.tv_nsec - session_start.tv_nsec) / 1000000000.0;
-		unsigned long long target_bytes = (unsigned long long)((elapsed * target_mbit * 1000000.0) / 8.0);
-
-		unsigned long long current_tx_bytes = 0;
-		if (path[0] != '\0') {
-			FILE *f_ctx = fopen(path, "r");
-			if (f_ctx) {
-				if (fscanf(f_ctx, "%llu", &current_tx_bytes) != 1) current_tx_bytes = 0;
-				fclose(f_ctx);
-			}
-		}
-		unsigned long long actual_bytes_emitted = (current_tx_bytes >= initial_tx_bytes) ? (current_tx_bytes - initial_tx_bytes) : total_bytes_sent;
-
-		// If our timing tracking notes a deficit, stretch the burst cycle to fill the session requirements
-		if (actual_bytes_emitted < target_bytes) {
-			int short_packets = (target_bytes - actual_bytes_emitted) / max_mtu;
-			if (short_packets > 0) {
-				burst_size += (short_packets > 45) ? 45 : short_packets;
-			}
 		}
 
 		for(int b = 0; b < burst_size; b++) {
@@ -265,7 +206,6 @@ int main(int argc, char *argv[]) {
 
 			memset(packet, 0, 4096);
 
-			// Dynamic urandom entropy collection for stream header burst protection
 			unsigned int r_ip_id = 0, r_src_ip = 0, r_tos = 0;
 			FILE *f_hdr = fopen("/dev/urandom", "rb");
 			if (f_hdr) {
@@ -293,29 +233,19 @@ int main(int argc, char *argv[]) {
 			tcph->doff = 5;
 			tcph->check = 0;
 
-			// Add distinct Loopix mixnet padding signature bytes to non-payload data spaces
 			char *payload_ptr = packet + sizeof(struct iphdr) + sizeof(struct tcphdr);
 			if(jittered_payload_size > 4) {
 				payload_ptr[0] = (char)LOOPIX_PADDING_MARKER;
 				payload_ptr[1] = (char)(current_index & 0xFF);
-
-				// P2P COVER TRAFFIC POOLING INJECTION:
-				// Embeds synthetic crowd-sourced swarm signature profiles and federated distributed
-				// node routing bytes to mimic multi-user peer pools and prevent single-user correlation.
 				payload_ptr[2] = (char)((r_ip_id >> 4) & 0xFF);
 				payload_ptr[3] = (char)((r_src_ip >> 4) & 0xFF);
 			}
 
-			total_burst_bytes += iph->tot_len;
-
 			struct timespec micro_req;
-			double sub_sec_p = get_loopix_delay(80000.0); // Micro-Poisson high precision calculation hook
+			double sub_sec_p = get_loopix_delay(80000.0);
 			micro_req.tv_sec = 0;
 			micro_req.tv_nsec = (long)(sub_sec_p * 1000000000.0) % 1000000000L;
 
-			// FIX APPLIED HERE: Removed the blocking conditional wrapper.
-			// Micro-sleep is unconditionally applied at a high Poisson rate without checking debt limits,
-			// ensuring constant non-stop firing.
 			nanosleep(&micro_req, NULL);
 
 			if (send(socks[tgt_idx], packet, iph->tot_len, MSG_NOSIGNAL) < 0) {
@@ -325,14 +255,12 @@ int main(int argc, char *argv[]) {
 				connect(socks[tgt_idx], (struct sockaddr *)&sins[tgt_idx], sizeof(sins[tgt_idx]));
 				send(socks[tgt_idx], packet, iph->tot_len, MSG_NOSIGNAL);
 			}
-			total_bytes_sent += iph->tot_len;
 		}
 
-		double jitter = get_loopix_delay(1.5); // Loopix dynamic inter-packet timing distribution marker
+		double jitter = get_loopix_delay(1.5);
 		req.tv_sec = (long)jitter;
 		req.tv_nsec = (long)((jitter - req.tv_sec) * 1000000000.0) % 1000000000L;
 
-		// FIX APPLIED HERE: Unconditionally sleep for the jitter interval to prevent throughput troughs.
 		nanosleep(&req, &rem);
 	}
 	return 0;
