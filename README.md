@@ -62,7 +62,7 @@ The Benefit: Every "slice" of data moving across the wire is physically identica
 
 ShadowNet maintains a disciplined 100kbps-5mbit pulse regardless of your actual activity. You are assigned a fixed one for each session.
 
-The Logic: If you are idle, the protocol maintains a "Hum" of cover traffic. If you are active, it throttles your data into that same 100kbps-5mbit window.
+The Logic: If you are idle, the protocol maintains a loopix-poisson cover traffic. If you are active, it maintains the same cover traffic.
 
 The Benefit: Your network signature remains a loopix consistent cover traffic. An adversary cannot see "spikes" in traffic that would indicate when you are actively using the computer versus when it is sitting idle.
 
@@ -250,16 +250,4 @@ while true; do curl --connect-timeout 2 -s https://check.torproject.org/api/ip |
     Verification: Open your browser and visit a leak-test site (like browserleaks.com/webrtc). Under WebRTC Local IP, it should show "N/A", "Timed out", or a Tor-internal IP (10.x.x.x). It must never show your real local IP (192.168.xxx.xxx)
 
 
-    🛡️ Summary of Logic
 
-    Diagnostic	Targeted Vulnerability	Sovereign Requirement
-
-    TC/SFQ	Timing Analysis	perturb 10sec active
-
-    NLOAD	Activity Correlation	Baseline > 100 kbit/s
-
-    TCPDUMP	Packet Size Fingerprinting	Fixed Length (1158/1186) 1200bytes
-
-    SYSCTL	Temporal/Uptime Leakage	Timestamps = 0
-
-    IP/ETH	Physical ID Tracking	Active != Permanent
