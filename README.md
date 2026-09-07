@@ -35,7 +35,7 @@ ShadowNet replaces standard linear packet release with Stochastic Fairness Queui
 
 The Logic: Instead of a predictable "tick-tock" delivery, packets are hashed into multiple internal "buckets" and released using a shuffling algorithm. The jitter also delays the start up connection/disconnection randomly, the NSA won't know when you just first connected to ShadowNet and when you disconnected, it's all delayed. Jitter is also applied to the cover traffic as well.
 
-The Benefit: It destroys Timing Correlation Attacks. By re-shuffling the internal order of packets every 1-4 seconds (perturb 1-4), it ensures that the rhythm of data leaving your home never matches the rhythm of data exiting a Tor node.
+The Benefit: It destroys Timing Correlation Attacks. By re-shuffling the internal order of every packet, it ensures that the rhythm of data reaching your entry node never matches the rhythm of data leaving the exit node.
 
 2. Multi-Tiered Decoy Handshakes
 
