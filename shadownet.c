@@ -170,8 +170,15 @@ void stop_shadownet() {
 	execute_14_tier_sanitation("heartbeat");
 	execute_14_tier_sanitation("shadownet_engine");
 	safe_execute("sudo rfkill unblock bluetooth 2>/dev/null");
-	safe_execute("sudo modprobe uvcvideo 2>/dev/null");
-	safe_execute("sudo modprobe snd_hda_intel 2>/dev/null");
+
+	// Dynamic existence verification before restoring modules
+	if (access("/lib/modules/$(uname -r)/kernel/drivers/media/usb/uvc", F_OK) == 0 || system("modinfo uvcvideo >/dev/null 2>&1") == 0) {
+		safe_execute("sudo modprobe uvcvideo 2>/dev/null");
+	}
+	if (access("/lib/modules/$(uname -r)/kernel/sound", F_OK) == 0 || system("modinfo snd-hda-intel >/dev/null 2>&1") == 0) {
+		safe_execute("sudo modprobe snd_hda_intel 2>/dev/null");
+	}
+
 	safe_execute("sudo chattr -i /sys/firmware/efi/efivars/* 2>/dev/null");
 	rmdir("/dev/shm/shadownet_heartbeat.pid /dev/shm/shadownet_engine.pid");
 	safe_execute("rm -f /dev/shm/shadownet_heartbeat.pid /dev/shm/shadownet_engine.pid");
@@ -250,6 +257,31 @@ void ebpp_entropy_scramble(char *rand_dest_ip, char *rand_src_ip, int *tos_val) 
 }
 
 void start_shadownet() {
+	// Startup Dependency & Environment Pre-Check (Comprehensive List of all binaries/utilities used across all system calls)
+	const char *required_bins[] = {
+		"lsof", "fuser", "macchanger", "clang", "adjtimex", "nft", "ip", "ethtool", "iw", "cpupower",
+		"tor", "grep", "awk", "head", "tail", "sed", "cut", "sort", "find", "ps", "ss", "modprobe",
+		"lsmod", "modinfo", "chattr", "rmdir", "rm", "cp", "mkdir", "mount", "sysctl", "hostnamectl",
+		"systemctl", "update-grub", "gcc", "bpftool", "basename", "uname", "tee", "tr", "expr"
+	};
+	int num_bins = sizeof(required_bins) / sizeof(required_bins[0]);
+	for (int i = 0; i < num_bins; i++) {
+		char check_cmd[128];
+		snprintf(check_cmd, sizeof(check_cmd), "command -v %s >/dev/null 2>&1", required_bins[i]);
+		if (system(check_cmd) != 0) {
+			double dep_delay = get_loopix_poisson_delay(1.0);
+			struct timespec dep_ts = {0, (long)(dep_delay * 1000000.0)};
+			nanosleep(&dep_ts, NULL);
+			fprintf(stderr, "\033[0;31m[!] CRITICAL DEPENDENCY MISSING: '%s' is not installed or unavailable.\033[0m\n", required_bins[i]);
+			fprintf(stderr, "\033[0;31m[!] Initiating 1ms XDP Emergency Lockdown due to unmet environment requirements.\033[0m\n");
+			trigger_emergency_lockdown();
+		}
+	}
+	// Verify kernel headers existence for eBPF / Clang compilation safety
+	if (access("/lib/modules/", F_OK) != 0 || system("ls /lib/modules/$(uname -r)/build >/dev/null 2>&1") != 0) {
+		printf("\033[1;33m[*] Warning: Kernel build headers not fully detected. Clang eBPF compilation fallback active.\033[0m\n");
+	}
+
 	char int_if[32] = {0};
 	get_interface(int_if);
 
@@ -340,7 +372,10 @@ void start_shadownet() {
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Audio/Microphone...\033[0m\n", hw_iat);
 	sleep(hw_iat);
-	safe_execute("sudo fuser -k /dev/snd/* >/dev/null 2>&1; sudo modprobe -r snd_hda_intel snd_usb_audio 2>/dev/null");
+	// Dynamic existence check before removing audio modules/fusers
+	if (access("/dev/snd", F_OK) == 0) {
+		safe_execute("sudo fuser -k /dev/snd/* >/dev/null 2>&1; sudo modprobe -r snd_hda_intel snd_usb_audio 2>/dev/null");
+	}
 
 	hw_iat = (int)get_loopix_poisson_delay(0.3);
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
@@ -352,7 +387,10 @@ void start_shadownet() {
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Camera/Webcam...\033[0m\n", hw_iat);
 	sleep(hw_iat);
-	safe_execute("sudo fuser -k /dev/video* >/dev/null 2>&1; sudo modprobe -r uvcvideo 2>/dev/null");
+	// Dynamic existence check before removing video/uvc modules
+	if (access("/dev/video0", F_OK) == 0 || access("/sys/class/video4linux", F_OK) == 0) {
+		safe_execute("sudo fuser -k /dev/video* >/dev/null 2>&1; sudo modprobe -r uvcvideo 2>/dev/null");
+	}
 
 	hw_iat = (int)get_loopix_poisson_delay(0.3);
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
@@ -364,7 +402,9 @@ void start_shadownet() {
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Motion Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
-	safe_execute("sudo modprobe -r hid_sensor_accel_3d hid_sensor_gyro_3d hid_sensor_hub 2>/dev/null");
+	if (access("/sys/bus/iio", F_OK) == 0 || system("lsmod | grep -q hid_sensor_hub") == 0) {
+		safe_execute("sudo modprobe -r hid_sensor_accel_3d hid_sensor_gyro_3d hid_sensor_hub 2>/dev/null");
+	}
 
 	hw_iat = (int)get_loopix_poisson_delay(0.3);
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
@@ -376,7 +416,9 @@ void start_shadownet() {
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Light Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
-	safe_execute("sudo modprobe -r hid_sensor_als 2>/dev/null");
+	if (system("lsmod | grep -q hid_sensor_als") == 0) {
+		safe_execute("sudo modprobe -r hid_sensor_als 2>/dev/null");
+	}
 
 	hw_iat = (int)get_loopix_poisson_delay(0.3);
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
@@ -388,7 +430,9 @@ void start_shadownet() {
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before disabling Thermal Sensors...\033[0m\n", hw_iat);
 	sleep(hw_iat);
-	safe_execute("sudo modprobe -r intel_rapl_msr intel_rapl_common processor_thermal_device_pci_legacy thermal 2>/dev/null");
+	if (access("/sys/class/thermal", F_OK) == 0) {
+		safe_execute("sudo modprobe -r intel_rapl_msr intel_rapl_common processor_thermal_device_pci_legacy thermal 2>/dev/null");
+	}
 
 	hw_iat = (int)get_loopix_poisson_delay(0.3);
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
@@ -412,7 +456,9 @@ void start_shadownet() {
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before BIOS Hardening...\033[0m\n", hw_iat);
 	sleep(hw_iat);
-	safe_execute("sudo chattr +i /sys/firmware/efi/efivars/* 2>/dev/null");
+	if (access("/sys/firmware/efi/efivars", F_OK) == 0) {
+		safe_execute("sudo chattr +i /sys/firmware/efi/efivars/* 2>/dev/null");
+	}
 
 	hw_iat = (int)get_loopix_poisson_delay(0.3);
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
@@ -424,7 +470,9 @@ void start_shadownet() {
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
 	printf("\033[1;33m[*] Applying Entropy IAT: %ds before Power Randomization...\033[0m\n", hw_iat);
 	sleep(hw_iat);
-	safe_execute("sudo cpupower frequency-set -g powersave >/dev/null 2>&1");
+	if (system("command -v cpupower >/dev/null 2>&1") == 0) {
+		safe_execute("sudo cpupower frequency-set -g powersave >/dev/null 2>&1");
+	}
 
 	hw_iat = (int)get_loopix_poisson_delay(0.3);
 	if (hw_iat < 2) hw_iat = 2; if (hw_iat > 5) hw_iat = 5;
@@ -454,7 +502,6 @@ void start_shadownet() {
 		exit(1);
 	}
 
-	// CHANGED: Randomized between 100kbps (0.1mbit) and 5000kbps (5mbit) via Loopix Poisson entropy
 	int target_kbps = (int)(get_loopix_poisson_delay(0.0005) * 1000.0) % 4901 + 100;
 	if (target_kbps < 100) target_kbps = 100;
 	if (target_kbps > 5000) target_kbps = 5000;
@@ -681,7 +728,6 @@ void start_shadownet() {
 	int netem_jitter = 20;
 	int sfq_perturb = 1;
 
-	// Updated rate parameters to match kbps scale cleanly for traffic shaping
 	snprintf(cmd, sizeof(cmd), "sudo tc qdisc add dev %.16s root handle 1: htb default 10; "
 	"sudo tc class add dev %.16s parent 1: classid 1:1 htb rate %dkbit ceil %dkbit quantum 65000; "
 	"sudo tc class add dev %.16s parent 1:1 classid 1:10 htb rate %dkbit ceil %dkbit burst 15k cburst 15k quantum 65000; "
